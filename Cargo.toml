@@ -1,0 +1,48 @@
+[package]
+name = "wraith-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Safe abstractions for Windows PEB/TEB manipulation and anti-detection techniques"
+repository = "https://github.com/helz-dotcom/wraith-rs"
+keywords = ["windows", "security", "peb", "teb", "internals"]
+categories = ["os::windows-apis", "development-tools"]
+
+[features]
+default = ["navigation", "unlink"]
+
+# layer features
+navigation = []
+unlink = ["navigation"]
+manual-map = ["navigation"]
+syscalls = []
+hooks = ["syscalls"]
+antidebug = []
+
+# all features
+full = ["navigation", "unlink", "manual-map", "syscalls", "hooks", "antidebug"]
+
+# optional integrations
+logging = ["dep:log"]
+
+# development
+test-utils = []
+
+[dependencies]
+log = { version = "0.4", optional = true }
+
+[dev-dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Kernel",
+    "Win32_System_WindowsProgramming",
+] }
+
+[lib]
+name = "wraith"
+path = "src/lib.rs"
