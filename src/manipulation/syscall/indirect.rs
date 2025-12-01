@@ -9,6 +9,12 @@ use super::table::{SyscallEntry, SyscallTable};
 use crate::error::{Result, WraithError};
 use core::arch::asm;
 
+#[cfg(target_arch = "x86_64")]
+const SYSCALL_BYTES: [u8; 2] = [0x0F, 0x05]; // syscall
+
+#[cfg(target_arch = "x86")]
+const SYSCALL_BYTES: [u8; 2] = [0x0F, 0x34]; // sysenter (or could be int 0x2e)
+
 /// indirect syscall invoker
 ///
 /// instead of using inline syscall instruction, jumps to the
@@ -20,8 +26,39 @@ pub struct IndirectSyscall {
 
 impl IndirectSyscall {
     /// create from SSN and syscall instruction address
-    pub const fn new(ssn: u16, syscall_addr: usize) -> Self {
+    ///
+    /// # Safety
+    /// caller must ensure syscall_addr points to a valid syscall instruction
+    pub const unsafe fn new_unchecked(ssn: u16, syscall_addr: usize) -> Self {
         Self { ssn, syscall_addr }
+    }
+
+    /// create from SSN and syscall instruction address with validation
+    pub fn new(ssn: u16, syscall_addr: usize) -> Result<Self> {
+        // validate the address actually contains a syscall instruction
+        if !Self::validate_syscall_address(syscall_addr) {
+            return Err(WraithError::SyscallEnumerationFailed {
+                reason: format!(
+                    "address {:#x} does not contain valid syscall instruction",
+                    syscall_addr
+                ),
+            });
+        }
+
+        Ok(Self { ssn, syscall_addr })
+    }
+
+    /// validate that an address contains a syscall instruction
+    fn validate_syscall_address(addr: usize) -> bool {
+        if addr == 0 {
+            return false;
+        }
+
+        // SAFETY: we're reading 2 bytes at the address to verify syscall instruction
+        // this could fault if addr is invalid, but we're checking for null above
+        // and this is called with addresses from ntdll which should be valid
+        let bytes: [u8; 2] = unsafe { *(addr as *const [u8; 2]) };
+        bytes == SYSCALL_BYTES
     }
 
     /// create from syscall entry
@@ -32,10 +69,7 @@ impl IndirectSyscall {
             }
         })?;
 
-        Ok(Self {
-            ssn: entry.ssn,
-            syscall_addr,
-        })
+        Self::new(entry.ssn, syscall_addr)
     }
 
     /// create from syscall table lookup

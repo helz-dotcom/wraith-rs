@@ -77,13 +77,17 @@ impl<'a> SyscallEnumerator<'a> {
             let name_rva = unsafe { *((names + i * 4) as *const u32) };
             let name_ptr = (base + name_rva as usize) as *const u8;
 
-            // read function name
+            // read function name with bounds checking
             let name = unsafe {
                 let mut len = 0;
                 while *name_ptr.add(len) != 0 && len < 256 {
                     len += 1;
                 }
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(name_ptr, len))
+                let bytes = core::slice::from_raw_parts(name_ptr, len);
+                match core::str::from_utf8(bytes) {
+                    Ok(s) => s,
+                    Err(_) => continue, // skip invalid UTF-8
+                }
             };
 
             // only process Nt/Zw functions (syscalls)

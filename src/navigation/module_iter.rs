@@ -10,12 +10,16 @@ use crate::structures::{LdrDataTableEntry, ListEntry, Peb};
 // re-export from error for consistency
 pub use crate::error::ModuleListType;
 
+// max iterations before assuming list is corrupted/circular
+const MAX_MODULES: usize = 4096;
+
 /// generic module iterator
 pub struct ModuleIterator<'a> {
     head: *const ListEntry,
     current: *const ListEntry,
     offset: usize,
     list_type: ModuleListType,
+    iterations: usize,
     _peb: &'a Peb, // keep PEB borrowed
 }
 
@@ -49,6 +53,7 @@ impl<'a> ModuleIterator<'a> {
             current,
             offset,
             list_type,
+            iterations: 0,
             _peb: peb,
         })
     }
@@ -65,6 +70,17 @@ impl<'a> Iterator for ModuleIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         // stop when we wrap back to head
         if core::ptr::eq(self.current, self.head) {
+            return None;
+        }
+
+        // protect against corrupted/circular lists
+        if self.iterations >= MAX_MODULES {
+            return None;
+        }
+        self.iterations += 1;
+
+        // validate current pointer is non-null
+        if self.current.is_null() {
             return None;
         }
 

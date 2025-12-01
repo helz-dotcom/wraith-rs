@@ -222,6 +222,9 @@ pub fn get_mapped_export_by_ordinal(
     Ok(memory.base() + func_rva as usize)
 }
 
+/// max length for import/export names to prevent unbounded reads
+const MAX_NAME_LENGTH: usize = 512;
+
 /// read null-terminated string from mapped memory
 fn read_string_from_memory(memory: &MappedMemory, rva: usize) -> Result<String> {
     let slice = memory.as_slice();
@@ -233,9 +236,17 @@ fn read_string_from_memory(memory: &MappedMemory, rva: usize) -> Result<String> 
         });
     }
 
+    let max_end = (rva + MAX_NAME_LENGTH).min(slice.len());
     let mut end = rva;
-    while end < slice.len() && slice[end] != 0 {
+    while end < max_end && slice[end] != 0 {
         end += 1;
+    }
+
+    // check if we hit the limit without finding null terminator
+    if end >= max_end && (end >= slice.len() || slice[end] != 0) {
+        return Err(WraithError::InvalidPeFormat {
+            reason: "string too long or missing null terminator".into(),
+        });
     }
 
     String::from_utf8(slice[rva..end].to_vec()).map_err(|_| WraithError::InvalidPeFormat {

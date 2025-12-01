@@ -262,24 +262,48 @@ impl std::fmt::Display for HookStats {
 // global tracker functions
 
 /// initialize global tracker
-pub fn init_global_tracker() {
-    let mut guard = GLOBAL_TRACKER.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(HookTracker::new());
+///
+/// returns false if mutex is poisoned (previous panic while holding lock)
+pub fn init_global_tracker() -> bool {
+    match GLOBAL_TRACKER.lock() {
+        Ok(mut guard) => {
+            if guard.is_none() {
+                *guard = Some(HookTracker::new());
+            }
+            true
+        }
+        Err(poisoned) => {
+            // recover from poisoned mutex by taking the guard anyway
+            let mut guard = poisoned.into_inner();
+            if guard.is_none() {
+                *guard = Some(HookTracker::new());
+            }
+            true
+        }
     }
 }
 
 /// get reference to global tracker (returns MutexGuard)
-pub fn global_tracker() -> std::sync::MutexGuard<'static, Option<HookTracker>> {
-    GLOBAL_TRACKER.lock().unwrap()
+///
+/// returns None if mutex is poisoned and recovery fails
+pub fn global_tracker() -> Option<std::sync::MutexGuard<'static, Option<HookTracker>>> {
+    match GLOBAL_TRACKER.lock() {
+        Ok(guard) => Some(guard),
+        Err(poisoned) => {
+            // recover from poisoned mutex
+            Some(poisoned.into_inner())
+        }
+    }
 }
 
 /// modify global tracker
+///
+/// returns None if tracker is not initialized or mutex is poisoned
 pub fn with_global_tracker<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HookTracker) -> R,
 {
-    let mut guard = GLOBAL_TRACKER.lock().unwrap();
+    let mut guard = global_tracker()?;
     guard.as_mut().map(f)
 }
 

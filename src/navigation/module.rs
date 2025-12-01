@@ -8,6 +8,11 @@ use crate::structures::{LdrDataTableEntry, ListEntry};
 use crate::structures::pe::nt_headers::{NT_SIGNATURE, PE32_MAGIC};
 use core::ptr::NonNull;
 
+// max length for export/import names to prevent unbounded reads
+const MAX_NAME_LENGTH: usize = 512;
+// max reasonable number of exports to prevent DoS
+const MAX_EXPORT_COUNT: usize = 0x10000;
+
 /// immutable reference to a loaded module
 pub struct Module<'a> {
     entry: &'a LdrDataTableEntry,
@@ -91,10 +96,28 @@ impl<'a> Module<'a> {
     /// get NT headers
     pub fn nt_headers(&self) -> Result<NtHeaders> {
         let dos = self.dos_header()?;
+
+        // validate e_lfanew is reasonable
+        if !dos.is_nt_offset_valid() {
+            let lfanew = dos.e_lfanew; // copy from packed struct
+            return Err(WraithError::InvalidPeFormat {
+                reason: format!("invalid e_lfanew: {:#x}", lfanew),
+            });
+        }
+
         let nt_offset = dos.nt_headers_offset();
+
+        // validate nt_offset is within module bounds (need space for NT headers)
+        const MIN_NT_HEADERS_SIZE: usize = 256; // enough for signature + file header + optional header
+        if nt_offset + MIN_NT_HEADERS_SIZE > self.size() {
+            return Err(WraithError::InvalidPeFormat {
+                reason: "e_lfanew points outside module bounds".into(),
+            });
+        }
+
         let nt_addr = self.base() + nt_offset;
 
-        // SAFETY: offset is from valid DOS header
+        // SAFETY: validated that nt_addr is within module bounds
         let signature = unsafe { *(nt_addr as *const u32) };
         if signature != NT_SIGNATURE {
             return Err(WraithError::InvalidPeFormat {
@@ -144,44 +167,84 @@ impl<'a> Module<'a> {
             });
         }
 
+        // validate export directory RVA is within module
+        if !self.is_rva_valid(export_dir.virtual_address, core::mem::size_of::<ExportDirectory>())
+        {
+            return Err(WraithError::InvalidPeFormat {
+                reason: "export directory RVA outside module bounds".into(),
+            });
+        }
+
         let export_va = self.rva_to_va(export_dir.virtual_address);
-        // SAFETY: export directory is present and valid
+        // SAFETY: validated RVA is within bounds
         let exports = unsafe { &*(export_va as *const ExportDirectory) };
 
         let num_names = exports.number_of_names as usize;
+        let num_functions = exports.number_of_functions as usize;
+
+        // sanity check export counts
+        if num_names > MAX_EXPORT_COUNT || num_functions > MAX_EXPORT_COUNT {
+            return Err(WraithError::InvalidPeFormat {
+                reason: format!("unreasonable export count: {num_names} names, {num_functions} functions"),
+            });
+        }
+
+        // validate array RVAs
+        let names_size = num_names.saturating_mul(4);
+        let ordinals_size = num_names.saturating_mul(2);
+        let functions_size = num_functions.saturating_mul(4);
+
+        if !self.is_rva_valid(exports.address_of_names, names_size)
+            || !self.is_rva_valid(exports.address_of_name_ordinals, ordinals_size)
+            || !self.is_rva_valid(exports.address_of_functions, functions_size)
+        {
+            return Err(WraithError::InvalidPeFormat {
+                reason: "export table array RVA outside module bounds".into(),
+            });
+        }
+
         let names_va = self.rva_to_va(exports.address_of_names);
         let ordinals_va = self.rva_to_va(exports.address_of_name_ordinals);
         let functions_va = self.rva_to_va(exports.address_of_functions);
 
         // search for name
         for i in 0..num_names {
-            // SAFETY: iterating within bounds of export arrays
+            // SAFETY: validated arrays are within bounds
             let name_rva = unsafe { *((names_va + i * 4) as *const u32) };
+
+            // validate name RVA
+            if !self.is_rva_valid(name_rva, 1) {
+                continue; // skip invalid entries
+            }
+
             let name_va = self.rva_to_va(name_rva);
-            let export_name = unsafe {
-                let ptr = name_va as *const u8;
-                let mut len = 0;
-                while *ptr.add(len) != 0 {
-                    len += 1;
-                }
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr, len))
+            let export_name = match self.read_string_at(name_va) {
+                Some(s) => s,
+                None => continue, // skip unreadable names
             };
 
             if export_name == name {
                 let ordinal = unsafe { *((ordinals_va + i * 2) as *const u16) } as usize;
+
+                // validate ordinal is within functions array
+                if ordinal >= num_functions {
+                    return Err(WraithError::InvalidPeFormat {
+                        reason: format!("ordinal {ordinal} exceeds function count {num_functions}"),
+                    });
+                }
+
                 let func_rva = unsafe { *((functions_va + ordinal * 4) as *const u32) };
 
                 // check for forwarded export
-                let func_va = self.rva_to_va(func_rva);
                 if func_rva >= export_dir.virtual_address
                     && func_rva < export_dir.virtual_address + export_dir.size
                 {
-                    // forwarded export - would need to resolve recursively
                     return Err(WraithError::InvalidPeFormat {
                         reason: format!("forwarded export: {name}"),
                     });
                 }
 
+                let func_va = self.rva_to_va(func_rva);
                 return Ok(func_va);
             }
         }
@@ -189,6 +252,44 @@ impl<'a> Module<'a> {
         Err(WraithError::ModuleNotFound {
             name: format!("export {name} not found"),
         })
+    }
+
+    /// check if RVA + size is within module bounds
+    fn is_rva_valid(&self, rva: u32, size: usize) -> bool {
+        let rva = rva as usize;
+        rva < self.size() && size <= self.size() - rva
+    }
+
+    /// safely read a null-terminated string at address within module
+    fn read_string_at(&self, addr: usize) -> Option<&str> {
+        let base = self.base();
+        let end = base + self.size();
+
+        if addr < base || addr >= end {
+            return None;
+        }
+
+        let max_len = (end - addr).min(MAX_NAME_LENGTH);
+        let ptr = addr as *const u8;
+
+        // find null terminator within bounds
+        let mut len = 0;
+        while len < max_len {
+            // SAFETY: addr is within module bounds, iterating up to max_len
+            let byte = unsafe { *ptr.add(len) };
+            if byte == 0 {
+                break;
+            }
+            len += 1;
+        }
+
+        if len == 0 || len >= max_len {
+            return None; // empty or no null terminator found
+        }
+
+        // SAFETY: we've verified bounds and found null terminator
+        let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
+        core::str::from_utf8(bytes).ok()
     }
 
     /// get export by ordinal
