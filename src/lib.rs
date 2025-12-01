@@ -17,6 +17,8 @@
 
 pub mod arch;
 pub mod error;
+#[cfg(feature = "manual-map")]
+pub mod manipulation;
 #[cfg(feature = "navigation")]
 pub mod navigation;
 pub mod structures;

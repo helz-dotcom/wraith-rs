@@ -10,7 +10,9 @@ pub mod relocations;
 pub mod tls;
 
 pub use dos_header::DosHeader;
-pub use nt_headers::{NtHeaders, NtHeaders32, NtHeaders64};
+pub use nt_headers::{
+    FileHeader, NtHeaders, NtHeaders32, NtHeaders64, OptionalHeader32, OptionalHeader64,
+};
 pub use section_header::SectionHeader;
 pub use data_directory::{DataDirectory, DataDirectoryType};
 pub use exports::ExportDirectory;
