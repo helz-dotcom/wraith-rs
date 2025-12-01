@@ -17,6 +17,8 @@
 
 pub mod arch;
 pub mod error;
+#[cfg(feature = "navigation")]
+pub mod navigation;
 pub mod structures;
 pub mod util;
 pub mod version;
