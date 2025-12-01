@@ -17,7 +17,13 @@
 
 pub mod arch;
 pub mod error;
-#[cfg(any(feature = "manual-map", feature = "syscalls"))]
+#[cfg(any(
+    feature = "manual-map",
+    feature = "syscalls",
+    feature = "hooks",
+    feature = "antidebug",
+    feature = "unlink"
+))]
 pub mod manipulation;
 #[cfg(feature = "navigation")]
 pub mod navigation;

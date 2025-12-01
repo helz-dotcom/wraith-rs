@@ -17,7 +17,7 @@ navigation = []
 unlink = ["navigation"]
 manual-map = ["navigation"]
 syscalls = ["navigation"]
-hooks = ["syscalls"]
+hooks = ["syscalls", "manual-map"]
 antidebug = []
 
 # all features
