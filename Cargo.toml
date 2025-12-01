@@ -16,7 +16,7 @@ default = ["navigation", "unlink"]
 navigation = []
 unlink = ["navigation"]
 manual-map = ["navigation"]
-syscalls = []
+syscalls = ["navigation"]
 hooks = ["syscalls"]
 antidebug = []
 
