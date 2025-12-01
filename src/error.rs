@@ -64,6 +64,9 @@ pub enum WraithError {
     /// failed to resolve import
     ImportResolutionFailed { dll: String, function: String },
 
+    /// export is forwarded to another module
+    ForwardedExport { forwarder: String },
+
     /// TLS callback execution failed
     TlsCallbackFailed { index: usize },
 
@@ -187,6 +190,9 @@ impl fmt::Display for WraithError {
             }
             Self::ImportResolutionFailed { dll, function } => {
                 write!(f, "failed to resolve {dll}!{function}")
+            }
+            Self::ForwardedExport { forwarder } => {
+                write!(f, "export forwarded to {forwarder}")
             }
             Self::TlsCallbackFailed { index } => {
                 write!(f, "TLS callback {index} failed")

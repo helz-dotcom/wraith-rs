@@ -239,9 +239,12 @@ impl<'a> Module<'a> {
                 if func_rva >= export_dir.virtual_address
                     && func_rva < export_dir.virtual_address + export_dir.size
                 {
-                    return Err(WraithError::InvalidPeFormat {
-                        reason: format!("forwarded export: {name}"),
-                    });
+                    // forwarder string is at the func_rva location
+                    let forwarder_va = self.rva_to_va(func_rva);
+                    let forwarder = self.read_string_at(forwarder_va)
+                        .unwrap_or("unknown")
+                        .to_string();
+                    return Err(WraithError::ForwardedExport { forwarder });
                 }
 
                 let func_va = self.rva_to_va(func_rva);

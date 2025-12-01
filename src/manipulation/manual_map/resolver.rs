@@ -14,10 +14,49 @@ pub fn resolve_imports(pe: &ParsedPe, memory: &mut MappedMemory) -> Result<()> {
     let query = ModuleQuery::new(&peb);
 
     resolve_imports_custom(pe, memory, |dll_name, proc_name| {
-        // find the module by name
-        let module = query.find_by_name(dll_name).ok()?;
-        module.get_export(proc_name).ok()
+        resolve_export_with_forwarding(&query, dll_name, proc_name, 0)
     })
+}
+
+/// resolve export with forwarding support (max 10 levels deep to prevent infinite loops)
+fn resolve_export_with_forwarding(
+    query: &ModuleQuery,
+    dll_name: &str,
+    proc_name: &str,
+    depth: usize,
+) -> Option<usize> {
+    if depth > 10 {
+        return None; // prevent infinite forwarding loops
+    }
+
+    let module = query.find_by_name(dll_name).ok()?;
+
+    match module.get_export(proc_name) {
+        Ok(addr) => Some(addr),
+        Err(WraithError::ForwardedExport { forwarder }) => {
+            // parse forwarder string: "DllName.FunctionName" or "DllName.#123" for ordinal
+            let dot_pos = forwarder.find('.')?;
+            let fwd_dll = &forwarder[..dot_pos];
+            let fwd_func = &forwarder[dot_pos + 1..];
+
+            // add .dll extension if not present
+            let fwd_dll_name = if fwd_dll.to_lowercase().ends_with(".dll") {
+                fwd_dll.to_string()
+            } else {
+                format!("{}.dll", fwd_dll)
+            };
+
+            // check for ordinal import (#123)
+            if fwd_func.starts_with('#') {
+                let ordinal: u16 = fwd_func[1..].parse().ok()?;
+                let fwd_module = query.find_by_name(&fwd_dll_name).ok()?;
+                fwd_module.get_export_by_ordinal(ordinal).ok()
+            } else {
+                resolve_export_with_forwarding(query, &fwd_dll_name, fwd_func, depth + 1)
+            }
+        }
+        Err(_) => None,
+    }
 }
 
 /// resolve imports with custom resolver function

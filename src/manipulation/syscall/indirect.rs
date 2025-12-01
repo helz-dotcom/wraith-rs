@@ -245,14 +245,16 @@ impl IndirectSyscall {
     ) -> i32 {
         let status: i32;
         // SAFETY: caller guarantees syscall and argument validity
+        // note: we put arg5 at [rsp+0x20] so that after `call` pushes return address,
+        // the kernel sees it at [rsp+0x28] as expected by Windows x64 calling convention
         unsafe {
             asm!(
-                "sub rsp, 0x30",
-                "mov [rsp+0x28], {arg5}",
+                "sub rsp, 0x28",
+                "mov [rsp+0x20], {arg5}",
                 "mov r10, rcx",
                 "mov eax, {ssn:e}",
-                "call {addr}",            // call instead of jmp for stack-based args
-                "add rsp, 0x30",
+                "call {addr}",
+                "add rsp, 0x28",
                 ssn = in(reg) self.ssn as u32,
                 addr = in(reg) self.syscall_addr,
                 arg5 = in(reg) arg5,
@@ -284,15 +286,17 @@ impl IndirectSyscall {
     ) -> i32 {
         let status: i32;
         // SAFETY: caller guarantees syscall and argument validity
+        // note: we put args at [rsp+0x20] and [rsp+0x28] so that after `call` pushes return address,
+        // the kernel sees them at [rsp+0x28] and [rsp+0x30] as expected
         unsafe {
             asm!(
-                "sub rsp, 0x38",
-                "mov [rsp+0x28], {arg5}",
-                "mov [rsp+0x30], {arg6}",
+                "sub rsp, 0x30",
+                "mov [rsp+0x20], {arg5}",
+                "mov [rsp+0x28], {arg6}",
                 "mov r10, rcx",
                 "mov eax, {ssn:e}",
                 "call {addr}",
-                "add rsp, 0x38",
+                "add rsp, 0x30",
                 ssn = in(reg) self.ssn as u32,
                 addr = in(reg) self.syscall_addr,
                 arg5 = in(reg) arg5,
