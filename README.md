@@ -35,6 +35,7 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 - **Export Resolution**: Find exported functions by name, ordinal, or hash
 - **Memory Region Queries**: Enumerate process memory regions with protection info
 - **Thread Enumeration**: List threads in the current process
+- **Pattern Scanning**: Scan memory for byte patterns with wildcard support (IDA-style signatures)
 
 ### Advanced Manipulation
 
@@ -55,6 +56,7 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | PEB/TEB access | Safe wrappers | Raw FFI | Not covered | No |
 | Version-aware offsets | Win7-Win11 | Manual | N/A | N/A |
 | Module enumeration | Iterator API | Manual | Manual | No |
+| Pattern scanning | Module + region scanning | No | No | No |
 | Module unlinking | Built-in | Manual | No | No |
 | Manual PE mapping | Full pipeline | No | No | Parse only |
 | Syscall invocation | Direct + Indirect | No | No | No |
@@ -119,6 +121,40 @@ for module in ModuleIterator::new(&peb, ModuleListType::InLoadOrder)? {
         module.size()
     );
 }
+```
+
+### Pattern Scanning
+
+```rust
+use wraith::util::{Scanner, Pattern, find_pattern_in_module};
+
+// Scan a module for an IDA-style pattern
+let matches = find_pattern_in_module("ntdll.dll", "48 8B 05 ?? ?? ?? ?? 48 89")?;
+for m in &matches {
+    println!("Found at {:#x} (offset {:#x})", m.address, m.offset);
+}
+
+// Use the Scanner builder for more control
+let scanner = Scanner::new("E8 ?? ?? ?? ?? 90")?
+    .alignment(1)       // check every byte (default)
+    .max_results(100);  // limit results
+
+// Scan a specific module
+let peb = wraith::Peb::current()?;
+let query = wraith::navigation::ModuleQuery::new(&peb);
+let ntdll = query.find_by_name("ntdll.dll")?;
+let calls = scanner.scan_module(&ntdll)?;
+println!("Found {} CALL instructions", calls.len());
+
+// Scan all executable memory regions
+let results = scanner.scan_executable_regions()?;
+
+// Code-style pattern (bytes + mask)
+let pattern = Pattern::from_code(
+    &[0x48, 0x8B, 0x05, 0x00, 0x00, 0x00, 0x00],
+    "xxx????"  // x = exact, ? = wildcard
+)?;
+let scanner = Scanner::from_pattern(pattern);
 ```
 
 ### Direct Syscalls

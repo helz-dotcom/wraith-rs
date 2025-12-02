@@ -1,4 +1,4 @@
-//! Manipulation primitives for PE loading, module hiding, syscalls, and anti-debug
+//! Manipulation primitives for PE loading, module hiding, syscalls, hooks, and anti-debug
 
 #[cfg(feature = "manual-map")]
 pub mod manual_map;
@@ -8,6 +8,9 @@ pub mod syscall;
 
 #[cfg(feature = "hooks")]
 pub mod hooks;
+
+#[cfg(feature = "inline-hook")]
+pub mod inline_hook;
 
 #[cfg(feature = "antidebug")]
 pub mod antidebug;

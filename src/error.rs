@@ -99,6 +99,25 @@ pub enum WraithError {
     /// clean copy of module not available
     CleanCopyUnavailable,
 
+    // === inline hooks ===
+    /// failed to install inline hook
+    HookInstallFailed { target: u64, reason: String },
+
+    /// failed to restore hook
+    HookRestoreFailed { target: u64, reason: String },
+
+    /// instruction decoding failed
+    InstructionDecodeFailed { address: u64, reason: String },
+
+    /// trampoline allocation failed
+    TrampolineAllocationFailed { near: u64, size: usize },
+
+    /// hook conflict detected (target already hooked)
+    HookConflict { target: u64, existing_type: String },
+
+    /// insufficient space for hook at target
+    InsufficientHookSpace { target: u64, available: usize, required: usize },
+
     // === memory ===
     /// memory read operation failed
     ReadFailed { address: u64, size: usize },
@@ -108,6 +127,10 @@ pub enum WraithError {
 
     /// failed to change memory protection
     ProtectionChangeFailed { address: u64, size: usize },
+
+    // === pattern scanning ===
+    /// failed to parse pattern string
+    PatternParseFailed { reason: String },
 
     // === win32 ===
     /// underlying Win32 API returned error
@@ -224,6 +247,27 @@ impl fmt::Display for WraithError {
             Self::CleanCopyUnavailable => {
                 write!(f, "clean copy of module not available for comparison")
             }
+            Self::HookInstallFailed { target, reason } => {
+                write!(f, "failed to install hook at {target:#x}: {reason}")
+            }
+            Self::HookRestoreFailed { target, reason } => {
+                write!(f, "failed to restore hook at {target:#x}: {reason}")
+            }
+            Self::InstructionDecodeFailed { address, reason } => {
+                write!(f, "instruction decode failed at {address:#x}: {reason}")
+            }
+            Self::TrampolineAllocationFailed { near, size } => {
+                write!(f, "failed to allocate {size} bytes trampoline near {near:#x}")
+            }
+            Self::HookConflict { target, existing_type } => {
+                write!(f, "hook conflict at {target:#x}: already hooked ({existing_type})")
+            }
+            Self::InsufficientHookSpace { target, available, required } => {
+                write!(
+                    f,
+                    "insufficient hook space at {target:#x}: need {required} bytes, have {available}"
+                )
+            }
             Self::ReadFailed { address, size } => {
                 write!(f, "failed to read {size} bytes at {address:#x}")
             }
@@ -235,6 +279,9 @@ impl fmt::Display for WraithError {
                     f,
                     "failed to change protection for {size} bytes at {address:#x}"
                 )
+            }
+            Self::PatternParseFailed { reason } => {
+                write!(f, "failed to parse pattern: {reason}")
             }
             Self::Win32Error { code, context } => {
                 write!(f, "Win32 error {code:#x} in {context}")
