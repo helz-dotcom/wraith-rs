@@ -1,6 +1,6 @@
 [package]
 name = "wraith-rs"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
@@ -17,12 +17,14 @@ navigation = []
 unlink = ["navigation"]
 manual-map = ["navigation"]
 syscalls = ["navigation"]
+spoof = ["syscalls"]
 hooks = ["syscalls", "manual-map"]
-inline-hook = ["hooks", "navigation"]
+inline-hook = ["hooks"]
 antidebug = []
+remote = ["syscalls"]
 
 # all features
-full = ["navigation", "unlink", "manual-map", "syscalls", "hooks", "inline-hook", "antidebug"]
+full = ["navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
 
 # optional integrations
 logging = ["dep:log"]

@@ -10,8 +10,6 @@ mod x86;
 pub use x64::X64;
 pub use x86::X86;
 
-use crate::error::Result;
-
 /// native architecture type alias based on target
 #[cfg(target_arch = "x86_64")]
 pub type NativeArch = X64;

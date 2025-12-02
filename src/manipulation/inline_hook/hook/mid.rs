@@ -8,7 +8,6 @@ use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;
 use crate::manipulation::inline_hook::guard::HookGuard;
 use crate::manipulation::inline_hook::trampoline::ExecutableMemory;
-use crate::manipulation::inline_hook::asm::Encoder;
 use super::Hook;
 use core::marker::PhantomData;
 

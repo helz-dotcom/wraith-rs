@@ -6,7 +6,7 @@
 use crate::error::{Result, WraithError};
 use crate::manipulation::inline_hook::arch::Architecture;
 use crate::manipulation::inline_hook::guard::HookGuard;
-use crate::manipulation::inline_hook::trampoline::{ExecutableMemory, TrampolineBuilder};
+use crate::manipulation::inline_hook::trampoline::ExecutableMemory;
 use crate::util::memory::ProtectionGuard;
 use core::marker::PhantomData;
 

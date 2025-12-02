@@ -45,9 +45,12 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | **Manual PE Mapping** | Load DLLs without `LoadLibrary` - invisible to module enumeration |
 | **Direct Syscalls** | Invoke syscalls directly via `syscall` instruction, bypassing usermode hooks |
 | **Indirect Syscalls** | Jump to ntdll's syscall instruction for cleaner call stacks |
+| **Spoofed Syscalls** | Return address spoofing, stack frame synthesis, gadget-based indirection |
 | **Hook Detection** | Detect inline hooks (jmp, mov/jmp, push/ret, int3) in loaded modules |
 | **Hook Removal** | Restore hooked functions using clean copies from disk |
+| **Inline Hooking** | Install detour hooks on functions with automatic trampoline generation |
 | **Anti-Debug** | Manipulate PEB.BeingDebugged, NtGlobalFlag, heap flags, hide threads |
+| **Remote Process** | Cross-process memory read/write, module enumeration, thread creation, injection |
 
 ## Comparison with Other Libraries
 
@@ -59,8 +62,9 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | Pattern scanning | Module + region scanning | No | No | No |
 | Module unlinking | Built-in | Manual | No | No |
 | Manual PE mapping | Full pipeline | No | No | Parse only |
-| Syscall invocation | Direct + Indirect | No | No | No |
+| Syscall invocation | Direct + Indirect + Spoofed | No | No | No |
 | Hook detection | Pattern + disk comparison | No | No | No |
+| Remote process ops | Full (read/write/inject) | Manual | Manual | No |
 | Zero dependencies* | Yes | Yes | Yes | Yes |
 
 *Core functionality has no required dependencies. Optional `log` integration available.
@@ -98,10 +102,13 @@ navigation = []           # Module/thread enumeration, memory queries
 unlink = ["navigation"]   # Module unlinking from PEB lists
 manual-map = ["navigation"] # Manual PE mapping (LoadLibrary bypass)
 syscalls = ["navigation"]  # Direct/indirect syscall invocation
+spoof = ["syscalls"]      # Return address spoofing, gadget finding, stack synthesis
 hooks = ["syscalls", "manual-map"] # Hook detection and removal
+inline-hook = ["hooks"]   # Inline hooking framework for function interception
 antidebug = []            # Anti-debugging techniques
+remote = ["syscalls"]     # Cross-process operations and injection
 
-full = ["navigation", "unlink", "manual-map", "syscalls", "hooks", "antidebug"]
+full = ["navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
 ```
 
 ## Usage Examples
@@ -172,6 +179,54 @@ println!("NtClose SSN: {}", entry.ssn);
 // Invoke directly (bypasses any usermode hooks)
 let syscall = DirectSyscall::from_entry(entry);
 let status = unsafe { syscall.call1(invalid_handle) };
+```
+
+### Spoofed Syscalls
+
+```rust
+use wraith::manipulation::spoof::{
+    SpoofedSyscall, SpoofConfig, SpoofMode,
+    GadgetFinder, StackSpoofer,
+};
+
+// Create a spoofed syscall with default gadget-based spoofing
+let syscall = SpoofedSyscall::new("NtAllocateVirtualMemory")?;
+
+// The syscall will use a jmp gadget from ntdll to make
+// the return address appear legitimate
+let status = unsafe {
+    syscall.call6(
+        process_handle,
+        &mut base_address as *mut _ as usize,
+        0,
+        &mut region_size as *mut _ as usize,
+        allocation_type,
+        protection,
+    )
+};
+
+// Find gadgets manually for custom use
+let finder = GadgetFinder::new()?;
+let jmp_gadgets = finder.find_jmp_rbx("ntdll.dll")?;
+let ret_gadgets = finder.find_ret("kernel32.dll")?;
+
+for gadget in jmp_gadgets.iter().take(3) {
+    println!("jmp rbx @ {:#x} in {}",
+        gadget.address(),
+        gadget.gadget.module_name
+    );
+}
+
+// Use different spoof modes
+let simple_spoof = SpoofedSyscall::with_config(
+    "NtClose",
+    SpoofConfig::simple(spoof_address)
+)?;
+
+// Stack synthesis for more complex scenarios
+let mut spoofer = StackSpoofer::new();
+spoofer.resolve_all()?;
+let fake_stack = spoofer.build_thread_start_stack()?;
 ```
 
 ### Hook Detection
@@ -249,6 +304,44 @@ antidebug::clear_heap_flags()?;
 
 // Hide current thread from debugger
 antidebug::hide_current_thread()?;
+```
+
+### Remote Process Operations
+
+```rust
+use wraith::manipulation::remote::{
+    RemoteProcess, ProcessAccess, enumerate_remote_modules,
+    inject_shellcode, inject_via_section, create_remote_thread,
+};
+
+// Open a process with full access
+let proc = RemoteProcess::open(target_pid, ProcessAccess::all())?;
+
+// Read/write memory across process boundaries
+let value: u32 = proc.read_value(address)?;
+proc.write_value(address, &0xDEADBEEF_u32)?;
+
+// Read strings from remote process
+let str = proc.read_string(address, 256)?;
+let wstr = proc.read_wstring(address, 256)?;
+
+// Allocate executable memory and write shellcode
+let alloc = proc.allocate_rwx(shellcode.len())?;
+proc.write(alloc.base(), &shellcode)?;
+
+// Create remote thread to execute
+let thread = create_remote_thread(&proc, alloc.base(), 0, Default::default())?;
+thread.wait_infinite()?;
+
+// Enumerate modules in remote process
+let modules = enumerate_remote_modules(&proc)?;
+for module in &modules {
+    println!("{} @ {:#x}", module.name, module.base);
+}
+
+// Injection methods
+let result = inject_shellcode(&proc, &shellcode)?;  // CreateRemoteThread
+let result = inject_via_section(&proc, &data, true)?;  // NtMapViewOfSection
 ```
 
 ## Windows Version Support

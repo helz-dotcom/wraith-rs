@@ -20,9 +20,11 @@ pub mod error;
 #[cfg(any(
     feature = "manual-map",
     feature = "syscalls",
+    feature = "spoof",
     feature = "hooks",
     feature = "antidebug",
-    feature = "unlink"
+    feature = "unlink",
+    feature = "remote"
 ))]
 pub mod manipulation;
 #[cfg(feature = "navigation")]

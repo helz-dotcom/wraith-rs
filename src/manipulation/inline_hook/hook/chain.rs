@@ -6,7 +6,7 @@
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;
-use crate::manipulation::inline_hook::trampoline::{ExecutableMemory, TrampolineBuilder};
+use crate::manipulation::inline_hook::trampoline::ExecutableMemory;
 use core::marker::PhantomData;
 
 const PAGE_EXECUTE_READWRITE: u32 = 0x40;

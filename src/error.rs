@@ -132,6 +132,47 @@ pub enum WraithError {
     /// failed to parse pattern string
     PatternParseFailed { reason: String },
 
+    // === remote process ===
+    /// failed to open remote process
+    ProcessOpenFailed { pid: u32, reason: String },
+
+    /// process with given ID not found
+    ProcessNotFound { pid: u32 },
+
+    /// failed to create remote thread
+    RemoteThreadFailed { reason: String },
+
+    /// failed to inject into remote process
+    InjectionFailed { method: String, reason: String },
+
+    /// failed to enumerate remote modules
+    RemoteModuleEnumFailed { reason: String },
+
+    /// failed to duplicate handle
+    HandleDuplicateFailed { reason: String },
+
+    /// section mapping failed
+    SectionMappingFailed { reason: String },
+
+    /// APC queue operation failed
+    ApcQueueFailed { reason: String },
+
+    /// thread context operation failed
+    ThreadContextFailed { reason: String },
+
+    /// thread suspend/resume failed
+    ThreadSuspendResumeFailed { reason: String },
+
+    // === spoofing ===
+    /// no suitable gadget found for spoofing
+    GadgetNotFound { gadget_type: &'static str },
+
+    /// failed to build spoof trampoline
+    SpoofTrampolineFailed { reason: String },
+
+    /// stack frame synthesis failed
+    StackSynthesisFailed { reason: String },
+
     // === win32 ===
     /// underlying Win32 API returned error
     Win32Error { code: u32, context: &'static str },
@@ -282,6 +323,45 @@ impl fmt::Display for WraithError {
             }
             Self::PatternParseFailed { reason } => {
                 write!(f, "failed to parse pattern: {reason}")
+            }
+            Self::ProcessOpenFailed { pid, reason } => {
+                write!(f, "failed to open process {pid}: {reason}")
+            }
+            Self::ProcessNotFound { pid } => {
+                write!(f, "process {pid} not found")
+            }
+            Self::RemoteThreadFailed { reason } => {
+                write!(f, "remote thread creation failed: {reason}")
+            }
+            Self::InjectionFailed { method, reason } => {
+                write!(f, "injection via {method} failed: {reason}")
+            }
+            Self::RemoteModuleEnumFailed { reason } => {
+                write!(f, "remote module enumeration failed: {reason}")
+            }
+            Self::HandleDuplicateFailed { reason } => {
+                write!(f, "handle duplication failed: {reason}")
+            }
+            Self::SectionMappingFailed { reason } => {
+                write!(f, "section mapping failed: {reason}")
+            }
+            Self::ApcQueueFailed { reason } => {
+                write!(f, "APC queue operation failed: {reason}")
+            }
+            Self::ThreadContextFailed { reason } => {
+                write!(f, "thread context operation failed: {reason}")
+            }
+            Self::ThreadSuspendResumeFailed { reason } => {
+                write!(f, "thread suspend/resume failed: {reason}")
+            }
+            Self::GadgetNotFound { gadget_type } => {
+                write!(f, "no suitable {gadget_type} gadget found")
+            }
+            Self::SpoofTrampolineFailed { reason } => {
+                write!(f, "spoof trampoline failed: {reason}")
+            }
+            Self::StackSynthesisFailed { reason } => {
+                write!(f, "stack frame synthesis failed: {reason}")
             }
             Self::Win32Error { code, context } => {
                 write!(f, "Win32 error {code:#x} in {context}")
