@@ -44,6 +44,11 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_WindowsProgramming",
 ] }
 
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
+all-features = true
+
 [lib]
 name = "wraith"
 path = "src/lib.rs"
