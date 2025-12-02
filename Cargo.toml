@@ -1,6 +1,6 @@
 [package]
 name = "wraith-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
