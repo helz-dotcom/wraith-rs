@@ -1,5 +1,11 @@
 //! PE file parsing
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::structures::pe::{
     DataDirectory, DataDirectoryType, DosHeader, FileHeader, OptionalHeader32, OptionalHeader64,

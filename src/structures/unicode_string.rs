@@ -1,5 +1,11 @@
 //! UNICODE_STRING structure with safe access
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{string::String, vec::Vec};
+
 use core::slice;
 
 /// raw UNICODE_STRING structure matching Windows definition

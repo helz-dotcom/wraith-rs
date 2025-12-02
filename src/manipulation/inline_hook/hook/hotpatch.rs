@@ -4,6 +4,12 @@
 //! at the entry point and 5 bytes of padding before. This allows atomic
 //! hook installation with minimal disruption.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;

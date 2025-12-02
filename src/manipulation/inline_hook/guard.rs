@@ -3,6 +3,12 @@
 //! Provides automatic restoration of hooked functions when the guard is dropped,
 //! similar to UnlinkGuard in the unlink module.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use super::arch::Architecture;

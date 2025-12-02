@@ -5,6 +5,12 @@
 //! - Code-style: bytes + mask (`"\x48\x8B"` with `"xx??"`)
 //! - Raw bytes with mask array
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec, vec::Vec};
+
 use crate::error::{Result, WraithError};
 
 /// parsed byte pattern with wildcard mask

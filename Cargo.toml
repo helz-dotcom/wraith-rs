@@ -1,6 +1,6 @@
 [package]
 name = "wraith-rs"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
@@ -10,7 +10,11 @@ keywords = ["windows", "security", "peb", "teb", "internals"]
 categories = ["os::windows-apis", "development-tools"]
 
 [features]
-default = ["navigation", "unlink"]
+default = ["std", "navigation", "unlink"]
+
+# std/no_std selection
+std = []
+alloc = []  # for no_std with heap allocation
 
 # layer features
 navigation = []
@@ -19,12 +23,12 @@ manual-map = ["navigation"]
 syscalls = ["navigation"]
 spoof = ["syscalls"]
 hooks = ["syscalls", "manual-map"]
-inline-hook = ["hooks"]
+inline-hook = ["hooks", "dep:iced-x86"]
 antidebug = []
 remote = ["syscalls"]
 
 # all features
-full = ["navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
+full = ["std", "navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
 
 # optional integrations
 logging = ["dep:log"]
@@ -34,6 +38,7 @@ test-utils = []
 
 [dependencies]
 log = { version = "0.4", optional = true }
+iced-x86 = { version = "1.21", optional = true, default-features = false, features = ["no_std", "decoder", "encoder", "block_encoder", "instr_info", "op_code_info"] }
 
 [dev-dependencies]
 windows-sys = { version = "0.59", features = [

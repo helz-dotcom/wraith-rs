@@ -16,6 +16,6 @@ pub use nt_headers::{
 pub use section_header::SectionHeader;
 pub use data_directory::{DataDirectory, DataDirectoryType};
 pub use exports::ExportDirectory;
-pub use imports::{ImportByName, ImportDescriptor, ImportLookupEntry, ThunkData32, ThunkData64};
+pub use imports::{ImportByName, ImportDescriptor, ImportLookupEntry, ThunkData32, ThunkData64, IMAGE_ORDINAL_FLAG32, IMAGE_ORDINAL_FLAG64};
 pub use relocations::{BaseRelocation, RelocationEntry, RelocationType};
 pub use tls::{TlsCallback, TlsDirectory, TlsDirectory32, TlsDirectory64};

@@ -2,6 +2,12 @@
 //!
 //! Provides a builder-style API for constructing x86/x64 instruction sequences.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 /// instruction encoder with builder API
 pub struct Encoder {
     buffer: Vec<u8>,

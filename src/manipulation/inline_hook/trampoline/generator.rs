@@ -3,6 +3,12 @@
 //! Generates trampolines that contain the relocated original function prologue
 //! followed by a jump back to the continuation point.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use super::allocator::ExecutableMemory;
 use crate::manipulation::inline_hook::arch::Architecture;

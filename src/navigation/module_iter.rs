@@ -1,5 +1,11 @@
 //! Iterators over loaded modules
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{string::String, vec::Vec};
+
 use super::module::Module;
 use crate::error::{Result, WraithError};
 use crate::structures::ldr::{

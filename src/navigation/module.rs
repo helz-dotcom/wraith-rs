@@ -1,5 +1,11 @@
 //! High-level module abstraction
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::{String, ToString}, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::{String, ToString}, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::structures::pe::{
     DataDirectoryType, DosHeader, ExportDirectory, NtHeaders, NtHeaders32, NtHeaders64,

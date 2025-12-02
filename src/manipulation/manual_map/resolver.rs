@@ -1,5 +1,11 @@
 //! Import resolution
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use super::allocator::MappedMemory;
 use super::parser::ParsedPe;
 use crate::error::{Result, WraithError};

@@ -3,6 +3,12 @@
 //! Extracts SSNs by parsing ntdll export directory and reading
 //! the syscall stub prologues to find the mov eax, imm32 instruction.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{string::{String, ToString}, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{string::{String, ToString}, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::navigation::{Module, ModuleQuery};
 use crate::structures::pe::{DataDirectoryType, ExportDirectory};

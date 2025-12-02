@@ -48,7 +48,13 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | **Spoofed Syscalls** | Return address spoofing, stack frame synthesis, gadget-based indirection |
 | **Hook Detection** | Detect inline hooks (jmp, mov/jmp, push/ret, int3) in loaded modules |
 | **Hook Removal** | Restore hooked functions using clean copies from disk |
-| **Inline Hooking** | Install detour hooks on functions with automatic trampoline generation |
+| **Inline Hooking** | Install detour hooks on functions with automatic trampoline generation (iced-x86 powered) |
+| **Instruction Decoding** | Full x86/x64 instruction decoding using iced-x86 for accurate disassembly |
+| **Instruction Relocation** | Proper instruction relocation for trampolines, handling all relative addressing modes |
+| **IAT Hooking** | Hook imports via Import Address Table modification (per-module) |
+| **EAT Hooking** | Hook exports via Export Address Table modification (affects GetProcAddress) |
+| **VEH Hooking** | Exception-based hooks using hardware breakpoints or INT3 |
+| **VMT Hooking** | Hook C++ virtual functions via vtable modification or shadow VMT |
 | **Anti-Debug** | Manipulate PEB.BeingDebugged, NtGlobalFlag, heap flags, hide threads |
 | **Remote Process** | Cross-process memory read/write, module enumeration, thread creation, injection |
 
@@ -65,9 +71,10 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | Syscall invocation | Direct + Indirect + Spoofed | No | No | No |
 | Hook detection | Pattern + disk comparison | No | No | No |
 | Remote process ops | Full (read/write/inject) | Manual | Manual | No |
+| Instruction decoding | iced-x86 powered | No | No | No |
 | Zero dependencies* | Yes | Yes | Yes | Yes |
 
-*Core functionality has no required dependencies. Optional `log` integration available.
+*Core functionality has no required dependencies. Optional `log` and `iced-x86` integration available.
 
 ### Why not just use ntapi/windows-sys?
 
@@ -104,12 +111,14 @@ manual-map = ["navigation"] # Manual PE mapping (LoadLibrary bypass)
 syscalls = ["navigation"]  # Direct/indirect syscall invocation
 spoof = ["syscalls"]      # Return address spoofing, gadget finding, stack synthesis
 hooks = ["syscalls", "manual-map"] # Hook detection and removal
-inline-hook = ["hooks"]   # Inline hooking framework for function interception
+inline-hook = ["hooks"]   # Comprehensive hooking with iced-x86 instruction decoding/relocation
 antidebug = []            # Anti-debugging techniques
 remote = ["syscalls"]     # Cross-process operations and injection
 
 full = ["navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
 ```
+
+Note: The `inline-hook` feature automatically includes `iced-x86` for proper x86/x64 instruction decoding and relocation.
 
 ## Usage Examples
 
@@ -246,6 +255,185 @@ for hook in hooks {
     if let Some(dest) = hook.hook_destination {
         println!("  Redirects to: {:#x}", dest);
     }
+}
+```
+
+### IAT Hooking
+
+```rust
+use wraith::manipulation::inline_hook::{
+    IatHook, enumerate_iat_entries, find_iat_entry, hook_import,
+};
+
+// Hook an import in the current module's IAT
+let hook = hook_import("kernel32.dll", "CreateFileW", my_detour as usize)?;
+let original = hook.original(); // get original function address
+
+// Or hook in a specific module
+let hook = IatHook::new("target.exe", "kernel32.dll", "VirtualAlloc", detour)?;
+
+// Hook is restored automatically on drop, or call .leak() to keep it
+hook.leak();
+
+// Enumerate all IAT entries in a module
+let peb = wraith::Peb::current()?;
+let query = wraith::navigation::ModuleQuery::new(&peb);
+let module = query.current_module()?;
+for entry in enumerate_iat_entries(&module)? {
+    println!("{}!{} @ {:#x}",
+        entry.dll_name,
+        entry.function_name.unwrap_or_default(),
+        entry.current_value
+    );
+}
+```
+
+### EAT Hooking
+
+```rust
+use wraith::manipulation::inline_hook::{
+    EatHook, EatHookBuilder, enumerate_eat_entries, find_eat_entry,
+};
+
+// Hook an export in ntdll's EAT
+// Note: detour must be within ±2GB of module for RVA encoding
+let hook = EatHook::new("ntdll.dll", "NtQueryInformationProcess", my_detour as usize)?;
+
+// Future GetProcAddress calls for this export will return our detour
+let original = hook.original();
+
+// Use the builder pattern
+let hook = EatHookBuilder::new()
+    .module("kernel32.dll")
+    .function("GetProcAddress")
+    .detour(my_detour as usize)
+    .build()?;
+
+// Enumerate exports
+let peb = wraith::Peb::current()?;
+let query = wraith::navigation::ModuleQuery::new(&peb);
+let ntdll = query.ntdll()?;
+for entry in enumerate_eat_entries(&ntdll)? {
+    if let Some(name) = &entry.function_name {
+        println!("{} ordinal={} RVA={:#x}{}",
+            name,
+            entry.ordinal,
+            entry.current_rva,
+            if entry.is_forwarded { " (forwarded)" } else { "" }
+        );
+    }
+}
+```
+
+### VEH Hooking
+
+```rust
+use wraith::manipulation::inline_hook::{
+    VehHook, DebugRegister, get_available_debug_register,
+    veh_hook_hardware, veh_hook_int3,
+};
+
+// Hardware breakpoint hook (uses debug registers, no code modification)
+let dr = get_available_debug_register()?; // Dr0-Dr3
+let hook = VehHook::hardware(target_addr, my_detour as usize, dr)?;
+
+// Or use convenience function (auto-selects available DR)
+let hook = veh_hook_hardware(target_addr, my_detour as usize)?;
+
+// INT3 software breakpoint hook (single byte modification)
+let hook = VehHook::int3(target_addr, my_detour as usize)?;
+// or: let hook = veh_hook_int3(target_addr, my_detour as usize)?;
+
+// Hooks are restored automatically on drop
+```
+
+### VMT Hooking
+
+```rust
+use wraith::manipulation::inline_hook::{
+    VmtHook, ShadowVmt, VmtHookBuilder,
+    get_vtable, get_vtable_entry, estimate_vtable_size,
+};
+
+// Direct VMT hook (affects all instances of the class)
+let hook = unsafe { VmtHook::new(object_ptr, vtable_index, my_detour as usize)? };
+let original: fn() = unsafe { std::mem::transmute(hook.original()) };
+
+// Use builder pattern
+let hook = VmtHookBuilder::new()
+    .vtable(vtable_address)
+    .index(5)
+    .detour(my_detour as usize)
+    .build()?;
+
+// Shadow VMT for instance-specific hooking (doesn't affect other objects)
+let mut shadow = unsafe { ShadowVmt::new(object_ptr as *mut (), vtable_size)? };
+shadow.hook(3, my_virtual_func3 as usize)?;
+shadow.hook(5, my_virtual_func5 as usize)?;
+
+// Get original functions
+let original_func3 = shadow.original(3).unwrap();
+let original_func5 = shadow.original(5).unwrap();
+
+// Utility functions
+let vtable = unsafe { get_vtable(object_ptr)? };
+let func_addr = unsafe { get_vtable_entry(vtable, 0)? };
+let vtable_size = unsafe { estimate_vtable_size(vtable, 100) }; // scan up to 100 entries
+```
+
+### Instruction Decoding (iced-x86)
+
+```rust
+use wraith::manipulation::inline_hook::asm::{
+    iced_decoder::{InstructionDecoder, decode_one, find_instruction_boundary},
+    iced_relocator::{InstructionRelocator, relocate_one, instruction_needs_relocation},
+};
+
+// Create a decoder for the current architecture
+let decoder = InstructionDecoder::native();
+
+// Decode a single instruction
+let bytes = [0xE9, 0x00, 0x01, 0x00, 0x00]; // jmp +0x100
+if let Some(decoded) = decode_one(0x1000, &bytes) {
+    println!("Length: {}", decoded.length);
+    println!("Is relative: {}", decoded.is_relative);
+    println!("Is control flow: {}", decoded.is_control_flow);
+    if let Some(target) = decoded.branch_target {
+        println!("Branch target: {:#x}", target);
+    }
+}
+
+// Find instruction boundary for hooking (need at least 5 bytes)
+let prologue = [0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x28];
+if let Some(boundary) = find_instruction_boundary(0x1000, &prologue, 5) {
+    println!("Safe to overwrite {} bytes", boundary);
+}
+
+// Decode all instructions in a function prologue
+let instructions = decoder.decode_all(0x1000, &prologue);
+for insn in &instructions {
+    println!("{:?} ({} bytes)", insn.mnemonic(), insn.length);
+}
+
+// Check if instruction needs relocation when moved
+if instruction_needs_relocation(&[0xE9, 0x00, 0x00, 0x00, 0x00], 0x1000) {
+    println!("JMP rel32 needs relocation");
+}
+
+// Relocate instruction from old address to new address
+let result = relocate_one(&[0xE9, 0x00, 0x01, 0x00, 0x00], 0x1000, 0x2000);
+if result.success {
+    println!("Relocated {} bytes -> {} bytes",
+        result.original_length, result.new_length);
+}
+
+// Relocate a block of instructions
+let relocator = InstructionRelocator::native();
+match relocator.relocate_block(&prologue, 0x1000, 0x2000) {
+    Ok(relocated_bytes) => {
+        println!("Relocated block: {} bytes", relocated_bytes.len());
+    }
+    Err(e) => println!("Relocation failed: {}", e),
 }
 ```
 

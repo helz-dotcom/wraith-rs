@@ -4,6 +4,12 @@
 //! allowing the hooking framework to support both x86 and x64 with compile-time
 //! architecture selection.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 mod x64;
 mod x86;
 

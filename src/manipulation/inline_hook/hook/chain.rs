@@ -3,6 +3,12 @@
 //! Allows multiple hooks on the same target function, organized by priority.
 //! Each hook in the chain can call the next via its trampoline.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;

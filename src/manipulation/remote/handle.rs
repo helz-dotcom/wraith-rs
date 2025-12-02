@@ -1,5 +1,11 @@
 //! Handle duplication and stealing operations
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::manipulation::syscall::{
     get_syscall_table, nt_close, nt_success, DirectSyscall,

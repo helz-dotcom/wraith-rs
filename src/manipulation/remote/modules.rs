@@ -1,5 +1,11 @@
 //! Remote module enumeration
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec, vec::Vec};
+
 use super::process::RemoteProcess;
 use crate::error::{Result, WraithError};
 use crate::manipulation::syscall::{

@@ -5,7 +5,15 @@
 use super::enumerator::{enumerate_syscalls, EnumeratedSyscall};
 use crate::error::{Result, WraithError};
 use crate::util::hash::djb2_hash;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
 
 /// syscall entry in the table
 #[derive(Debug, Clone)]
@@ -35,6 +43,7 @@ impl From<EnumeratedSyscall> for SyscallEntry {
 }
 
 /// syscall lookup table
+#[cfg(feature = "std")]
 pub struct SyscallTable {
     /// entries by name hash
     by_hash: HashMap<u32, SyscallEntry>,
@@ -44,13 +53,49 @@ pub struct SyscallTable {
     entries: Vec<SyscallEntry>,
 }
 
+/// syscall lookup table (no_std version using BTreeMap)
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+pub struct SyscallTable {
+    /// entries by name hash
+    by_hash: BTreeMap<u32, SyscallEntry>,
+    /// entries by SSN
+    by_ssn: BTreeMap<u16, SyscallEntry>,
+    /// all entries in order
+    entries: Vec<SyscallEntry>,
+}
+
 impl SyscallTable {
     /// enumerate and build syscall table
+    #[cfg(feature = "std")]
     pub fn enumerate() -> Result<Self> {
         let syscalls = enumerate_syscalls()?;
 
         let mut by_hash = HashMap::with_capacity(syscalls.len());
         let mut by_ssn = HashMap::with_capacity(syscalls.len());
+        let mut entries = Vec::with_capacity(syscalls.len());
+
+        for sc in syscalls {
+            let entry = SyscallEntry::from(sc);
+
+            by_hash.insert(entry.name_hash, entry.clone());
+            by_ssn.insert(entry.ssn, entry.clone());
+            entries.push(entry);
+        }
+
+        Ok(Self {
+            by_hash,
+            by_ssn,
+            entries,
+        })
+    }
+
+    /// enumerate and build syscall table (no_std version)
+    #[cfg(all(not(feature = "std"), feature = "alloc"))]
+    pub fn enumerate() -> Result<Self> {
+        let syscalls = enumerate_syscalls()?;
+
+        let mut by_hash = BTreeMap::new();
+        let mut by_ssn = BTreeMap::new();
         let mut entries = Vec::with_capacity(syscalls.len());
 
         for sc in syscalls {

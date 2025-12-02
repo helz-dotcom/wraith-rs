@@ -3,6 +3,8 @@
 //! Clears debug indicators in the Process Environment Block (PEB)
 //! that are commonly checked by anti-debug code.
 
+use core::fmt;
+
 use crate::error::Result;
 use crate::structures::Peb;
 
@@ -86,8 +88,8 @@ impl PebDebugState {
     }
 }
 
-impl std::fmt::Display for PebDebugState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for PebDebugState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PEB Debug State:")?;
         writeln!(
             f,

@@ -1,5 +1,11 @@
 //! Remote thread creation and manipulation
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String};
+
+#[cfg(feature = "std")]
+use std::{format, string::String};
+
 use super::process::RemoteProcess;
 use crate::error::{Result, WraithError};
 use crate::manipulation::syscall::{

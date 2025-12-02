@@ -1,5 +1,11 @@
 //! Remote process wrapper for cross-process operations
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::manipulation::syscall::{
     nt_allocate_virtual_memory, nt_close, nt_free_virtual_memory, nt_open_process,

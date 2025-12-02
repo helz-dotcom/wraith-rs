@@ -3,6 +3,12 @@
 //! Restores hooked functions to their original state by copying
 //! original bytes from a clean copy of the module (loaded from disk).
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use super::detector::{HookDetector, HookInfo};
 use crate::error::{Result, WraithError};
 use crate::manipulation::manual_map::ParsedPe;
@@ -44,6 +50,7 @@ pub struct Unhooker<'a> {
 
 impl<'a> Unhooker<'a> {
     /// create unhooker for module (loads clean copy from disk)
+    #[cfg(feature = "std")]
     pub fn new(module: &'a Module<'a>) -> Result<Self> {
         let path = module.full_path();
         let clean_copy = std::fs::read(&path).map_err(|_| WraithError::CleanCopyUnavailable)?;
@@ -55,6 +62,12 @@ impl<'a> Unhooker<'a> {
             clean_copy,
             parsed_pe,
         })
+    }
+
+    /// create unhooker for module (no_std - requires explicit clean copy)
+    #[cfg(not(feature = "std"))]
+    pub fn new(_module: &'a Module<'a>) -> Result<Self> {
+        Err(WraithError::CleanCopyUnavailable)
     }
 
     /// create unhooker with explicit clean copy

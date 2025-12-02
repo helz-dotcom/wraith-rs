@@ -25,6 +25,12 @@
 //! # Ok::<(), wraith::WraithError>(())
 //! ```
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String};
+
+#[cfg(feature = "std")]
+use std::{format, string::String};
+
 mod allocator;
 mod entry;
 mod mapper;
@@ -80,11 +86,20 @@ impl ManualMapper<state::Parsed> {
     }
 
     /// parse PE from file
+    #[cfg(feature = "std")]
     pub fn from_file(path: &str) -> Result<Self> {
         let data = std::fs::read(path).map_err(|e| WraithError::InvalidPeFormat {
             reason: format!("failed to read file: {e}"),
         })?;
         Self::parse(&data)
+    }
+
+    /// parse PE from file (no_std stub)
+    #[cfg(not(feature = "std"))]
+    pub fn from_file(_path: &str) -> Result<Self> {
+        Err(WraithError::InvalidPeFormat {
+            reason: "file operations not available in no_std".into(),
+        })
     }
 
     /// get reference to parsed PE

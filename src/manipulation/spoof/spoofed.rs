@@ -3,16 +3,26 @@
 //! Combines gadget finding, stack spoofing, and trampolines to invoke
 //! syscalls with spoofed return addresses that appear legitimate.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::sync::OnceLock;
+
 use super::gadget::GadgetFinder;
 use super::trampoline::{SpoofTrampoline, TrampolineAllocator};
 use crate::error::{Result, WraithError};
 use crate::manipulation::syscall::SyscallEntry;
 use core::arch::asm;
-use std::sync::OnceLock;
 
 /// global trampoline allocator
+#[cfg(feature = "std")]
 static TRAMPOLINE_ALLOC: OnceLock<Result<TrampolineAllocator>> = OnceLock::new();
 
+#[cfg(feature = "std")]
 fn get_trampoline_allocator() -> Result<&'static TrampolineAllocator> {
     let result = TRAMPOLINE_ALLOC.get_or_init(TrampolineAllocator::new);
     match result {
@@ -22,6 +32,14 @@ fn get_trampoline_allocator() -> Result<&'static TrampolineAllocator> {
             size: 0,
         }),
     }
+}
+
+#[cfg(not(feature = "std"))]
+fn get_trampoline_allocator() -> Result<&'static TrampolineAllocator> {
+    Err(WraithError::TrampolineAllocationFailed {
+        near: 0,
+        size: 0,
+    })
 }
 
 /// mode of return address spoofing

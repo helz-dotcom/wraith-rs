@@ -3,6 +3,12 @@
 //! Hooks at arbitrary locations within a function, not just the prologue.
 //! Requires saving and restoring CPU context around the detour call.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;

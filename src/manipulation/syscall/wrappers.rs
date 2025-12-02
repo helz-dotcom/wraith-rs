@@ -2,8 +2,12 @@
 //!
 //! Provides safe-ish Rust interfaces for frequently used NT syscalls,
 //! handling argument marshaling and error checking.
+//!
+//! Note: These wrappers require the `std` feature for the global syscall table.
 
-use super::{get_syscall_table, nt_success, DirectSyscall};
+#[cfg(feature = "std")]
+use super::get_syscall_table;
+use super::{nt_success, DirectSyscall};
 use crate::error::{Result, WraithError};
 
 // NT structures for syscall arguments

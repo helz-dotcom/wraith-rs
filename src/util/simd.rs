@@ -2,6 +2,15 @@
 //!
 //! Uses SSE2/AVX2 for fast pattern scanning when available.
 //! Falls back to scalar implementation on unsupported platforms.
+//!
+//! In `no_std` mode, runtime SIMD detection is disabled and defaults to
+//! scalar implementation. Use target features to enable SIMD at compile time.
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
@@ -22,9 +31,12 @@ pub enum SimdLevel {
 
 impl SimdLevel {
     /// detect the best available SIMD level at runtime
+    ///
+    /// in `no_std` mode, this uses compile-time target features instead of runtime detection.
+    /// enable `target-feature=+avx2` or `target-feature=+sse2` at compile time for SIMD acceleration.
     #[inline]
     pub fn detect() -> Self {
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        #[cfg(all(feature = "std", any(target_arch = "x86_64", target_arch = "x86")))]
         {
             if is_x86_feature_detected!("avx2") {
                 return SimdLevel::Avx2;
@@ -33,6 +45,20 @@ impl SimdLevel {
                 return SimdLevel::Sse2;
             }
         }
+
+        // in no_std mode, use compile-time feature detection
+        #[cfg(all(not(feature = "std"), any(target_arch = "x86_64", target_arch = "x86")))]
+        {
+            #[cfg(target_feature = "avx2")]
+            {
+                return SimdLevel::Avx2;
+            }
+            #[cfg(all(not(target_feature = "avx2"), target_feature = "sse2"))]
+            {
+                return SimdLevel::Sse2;
+            }
+        }
+
         SimdLevel::None
     }
 }

@@ -3,6 +3,8 @@
 //! Clears debug flags from the process heap that are set when
 //! a debugger is attached.
 
+use core::fmt;
+
 use crate::error::{Result, WraithError};
 use crate::structures::Peb;
 
@@ -129,8 +131,8 @@ impl HeapFlags {
     }
 }
 
-impl std::fmt::Display for HeapFlags {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for HeapFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Heap Flags:")?;
         writeln!(f, "  Flags: {:#010x}", self.flags)?;
         writeln!(f, "  ForceFlags: {:#010x}", self.force_flags)?;

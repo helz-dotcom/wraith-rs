@@ -27,8 +27,10 @@ mod spoofed;
 mod trampoline;
 
 pub use gadget::{
-    Gadget, GadgetCache, GadgetFinder, GadgetType, JmpGadget, RetGadget,
+    Gadget, GadgetFinder, GadgetType, JmpGadget, RetGadget,
 };
+#[cfg(feature = "std")]
+pub use gadget::GadgetCache;
 pub use stack::{
     FakeFrame, FrameTemplate, StackSpoofer, SyntheticStack, COMMON_FRAME_TEMPLATES,
 };
@@ -38,11 +40,13 @@ pub use trampoline::{SpoofTrampoline, TrampolineAllocator};
 use crate::error::Result;
 
 /// initialize the global gadget cache by scanning system modules
+#[cfg(feature = "std")]
 pub fn init_gadget_cache() -> Result<()> {
     gadget::init_global_cache()
 }
 
 /// get a reference to the global gadget cache
+#[cfg(feature = "std")]
 pub fn get_gadget_cache() -> Result<&'static GadgetCache> {
     gadget::get_global_cache()
 }

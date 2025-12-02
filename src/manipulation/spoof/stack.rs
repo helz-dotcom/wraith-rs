@@ -3,6 +3,12 @@
 //! Creates fake stack frames that look like legitimate call chains,
 //! making syscall invocations appear to come from expected call paths.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::navigation::ModuleQuery;
 use crate::structures::Peb;

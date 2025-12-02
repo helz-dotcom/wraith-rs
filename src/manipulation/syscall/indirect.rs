@@ -5,6 +5,12 @@
 //! call stack that appears to originate from ntdll, evading some
 //! call stack analysis techniques.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::{String, ToString}};
+
+#[cfg(feature = "std")]
+use std::{format, string::{String, ToString}};
+
 use super::table::{SyscallEntry, SyscallTable};
 use crate::error::{Result, WraithError};
 use core::arch::asm;

@@ -3,6 +3,12 @@
 //! Overwrites the function prologue with a jump to the detour function.
 //! A trampoline is created to call the original function.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::util::memory::ProtectionGuard;
 use crate::manipulation::inline_hook::arch::Architecture;

@@ -1,5 +1,11 @@
 //! Query interfaces for finding modules
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, vec::Vec};
+
 use super::module::{Module, ModuleHandle};
 use super::module_iter::{ModuleIterator, ModuleListType};
 use crate::error::{Result, WraithError};

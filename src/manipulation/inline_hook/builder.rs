@@ -3,6 +3,12 @@
 //! Provides a compile-time safe builder pattern for creating hooks,
 //! similar to ManualMapper in the manual_map module.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::manipulation::inline_hook::arch::Architecture;
 use crate::manipulation::inline_hook::guard::HookGuard;

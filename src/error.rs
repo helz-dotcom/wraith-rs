@@ -2,6 +2,12 @@
 
 use core::fmt;
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::string::String;
+
+#[cfg(feature = "std")]
+use std::string::String;
+
 /// all errors that can occur in wraith-rs
 #[derive(Debug)]
 pub enum WraithError {
@@ -196,6 +202,7 @@ impl fmt::Display for ModuleListType {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for WraithError {}
 
 impl fmt::Display for WraithError {
@@ -371,7 +378,7 @@ impl fmt::Display for WraithError {
 }
 
 /// result type alias using WraithError
-pub type Result<T> = std::result::Result<T, WraithError>;
+pub type Result<T> = core::result::Result<T, WraithError>;
 
 impl WraithError {
     /// create Win32Error from GetLastError

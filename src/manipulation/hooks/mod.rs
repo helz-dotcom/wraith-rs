@@ -5,13 +5,23 @@
 //! It also provides the ability to restore hooked functions to their
 //! original state.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 mod detector;
+#[cfg(feature = "std")]
 mod integrity;
+#[cfg(feature = "std")]
 mod tracker;
 mod unhook;
 
 pub use detector::{is_hooked, HookDetector, HookInfo, HookType};
+#[cfg(feature = "std")]
 pub use integrity::IntegrityChecker;
+#[cfg(feature = "std")]
 pub use tracker::HookTracker;
 pub use unhook::{UnhookResult, Unhooker};
 

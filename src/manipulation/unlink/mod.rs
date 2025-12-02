@@ -3,6 +3,12 @@
 //! Removes modules from the PEB's three module lists (InLoadOrder,
 //! InMemoryOrder, InInitializationOrder) to hide them from enumeration.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::string::String;
+
+#[cfg(feature = "std")]
+use std::string::String;
+
 mod list_unlink;
 
 pub use list_unlink::{relink_module, unlink_module, SavedLinks, UnlinkGuard};

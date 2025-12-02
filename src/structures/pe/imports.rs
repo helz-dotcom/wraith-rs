@@ -1,5 +1,11 @@
 //! Import structures
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::string::String;
+
+#[cfg(feature = "std")]
+use std::string::String;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ImportDescriptor {

@@ -6,13 +6,24 @@
 use crate::error::{Result, WraithError};
 use crate::navigation::ModuleQuery;
 use crate::structures::Peb;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
 use std::sync::OnceLock;
 
-/// global gadget cache
+#[cfg(feature = "std")]
 static GADGET_CACHE: OnceLock<Result<GadgetCache>> = OnceLock::new();
 
 /// initialize the global gadget cache
+#[cfg(feature = "std")]
 pub fn init_global_cache() -> Result<()> {
     let result = GADGET_CACHE.get_or_init(GadgetCache::build);
     match result {
@@ -24,6 +35,7 @@ pub fn init_global_cache() -> Result<()> {
 }
 
 /// get global gadget cache reference
+#[cfg(feature = "std")]
 pub fn get_global_cache() -> Result<&'static GadgetCache> {
     let result = GADGET_CACHE.get_or_init(GadgetCache::build);
     match result {
@@ -134,7 +146,7 @@ impl Gadget {
         }
 
         // SAFETY: we're reading from a previously-validated code address
-        let actual = unsafe { std::slice::from_raw_parts(self.address as *const u8, bytes.len()) };
+        let actual = unsafe { core::slice::from_raw_parts(self.address as *const u8, bytes.len()) };
         actual == bytes
     }
 }
@@ -166,6 +178,7 @@ impl RetGadget {
 }
 
 /// cache of found gadgets organized by type and module
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct GadgetCache {
     /// gadgets indexed by type
@@ -180,6 +193,7 @@ pub struct GadgetCache {
     preferred_ret: Option<Gadget>,
 }
 
+#[cfg(feature = "std")]
 impl GadgetCache {
     /// build gadget cache by scanning system modules
     pub fn build() -> Result<Self> {
@@ -340,7 +354,7 @@ impl GadgetFinder {
 
         // scan for the byte pattern
         // SAFETY: module memory is mapped and readable
-        let data = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+        let data = unsafe { core::slice::from_raw_parts(base as *const u8, size) };
 
         let mut gadgets = Vec::new();
         let pattern_len = bytes.len();
@@ -372,7 +386,7 @@ impl GadgetFinder {
         let is_system = is_system_module(&name);
 
         // SAFETY: module memory is mapped and readable
-        let data = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+        let data = unsafe { core::slice::from_raw_parts(base as *const u8, size) };
 
         let mut gadgets = Vec::new();
 
@@ -444,7 +458,7 @@ impl GadgetFinder {
         let is_system = is_system_module(&name);
 
         // SAFETY: module memory is mapped and readable
-        let data = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+        let data = unsafe { core::slice::from_raw_parts(base as *const u8, size) };
 
         let mut gadgets = Vec::new();
 

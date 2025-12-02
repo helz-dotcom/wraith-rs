@@ -3,8 +3,14 @@
 //! Allocates executable memory for trampoline code that performs
 //! the actual stack manipulation and syscall invocation.
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 use crate::error::{Result, WraithError};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// size of each trampoline slot
 const TRAMPOLINE_SIZE: usize = 256;

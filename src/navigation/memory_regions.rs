@@ -1,5 +1,11 @@
 //! Memory region enumeration using VirtualQuery
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 use crate::error::{Result, WraithError};
 
 /// memory region information

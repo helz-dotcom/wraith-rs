@@ -1,5 +1,11 @@
 //! LDR_DATA_TABLE_ENTRY and PEB_LDR_DATA structures
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::string::String;
+
+#[cfg(feature = "std")]
+use std::string::String;
+
 use super::list_entry::ListEntry;
 use super::unicode_string::UnicodeString;
 use crate::arch::NativePtr;

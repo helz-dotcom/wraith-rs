@@ -32,12 +32,22 @@ pub use table::{hashes, SyscallEntry, SyscallTable};
 pub use wrappers::*;
 
 use crate::error::Result;
+
+#[cfg(feature = "std")]
 use std::sync::OnceLock;
 
-/// global syscall table (initialized on first use)
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::format;
+
+#[cfg(feature = "std")]
 static SYSCALL_TABLE: OnceLock<Result<SyscallTable>> = OnceLock::new();
 
 /// get or initialize the global syscall table
+///
+/// note: in no_std mode, this creates a new table each call since
+/// global lazy initialization requires std. consider caching the
+/// result yourself in no_std environments.
+#[cfg(feature = "std")]
 pub fn get_syscall_table() -> Result<&'static SyscallTable> {
     let result = SYSCALL_TABLE.get_or_init(SyscallTable::enumerate);
     match result {
@@ -46,6 +56,14 @@ pub fn get_syscall_table() -> Result<&'static SyscallTable> {
             reason: format!("{}", e),
         }),
     }
+}
+
+/// enumerate syscall table (no caching)
+///
+/// in no_std mode, you must cache the result yourself if needed.
+#[cfg(not(feature = "std"))]
+pub fn enumerate_syscall_table() -> Result<SyscallTable> {
+    SyscallTable::enumerate()
 }
 
 /// syscall invocation mode
@@ -66,7 +84,7 @@ impl Default for SyscallMode {
 }
 
 /// preferred syscall mode (can be changed at runtime)
-static PREFERRED_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static PREFERRED_MODE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
 
 /// set preferred syscall mode
 pub fn set_syscall_mode(mode: SyscallMode) {
@@ -75,12 +93,12 @@ pub fn set_syscall_mode(mode: SyscallMode) {
         SyscallMode::Indirect => 1,
         SyscallMode::Native => 2,
     };
-    PREFERRED_MODE.store(value, std::sync::atomic::Ordering::Relaxed);
+    PREFERRED_MODE.store(value, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// get current syscall mode
 pub fn get_syscall_mode() -> SyscallMode {
-    match PREFERRED_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+    match PREFERRED_MODE.load(core::sync::atomic::Ordering::Relaxed) {
         0 => SyscallMode::Direct,
         1 => SyscallMode::Indirect,
         _ => SyscallMode::Native,

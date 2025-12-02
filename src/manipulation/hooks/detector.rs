@@ -3,6 +3,14 @@
 //! Detects various types of inline hooks by analyzing function prologues
 //! and comparing against known hook patterns or clean copies from disk.
 
+use core::fmt;
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{string::String, vec::Vec};
+
 use crate::error::{Result, WraithError};
 use crate::navigation::Module;
 use crate::structures::pe::{DataDirectoryType, ExportDirectory};
@@ -24,8 +32,8 @@ pub enum HookType {
     Unknown,
 }
 
-impl std::fmt::Display for HookType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for HookType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::JmpRel32 => write!(f, "jmp rel32"),
             Self::JmpIndirect => write!(f, "jmp [addr]"),
@@ -93,9 +101,16 @@ impl<'a> HookDetector<'a> {
     }
 
     /// load clean copy of module from disk
+    #[cfg(feature = "std")]
     fn load_clean_copy(module: &Module) -> Result<Vec<u8>> {
         let path = module.full_path();
         std::fs::read(&path).map_err(|_| WraithError::CleanCopyUnavailable)
+    }
+
+    /// load clean copy of module from disk (no_std stub)
+    #[cfg(not(feature = "std"))]
+    fn load_clean_copy(_module: &Module) -> Result<Vec<u8>> {
+        Err(WraithError::CleanCopyUnavailable)
     }
 
     /// check if clean copy is available

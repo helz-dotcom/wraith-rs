@@ -6,6 +6,12 @@
 //! - APC injection (queue user APC)
 //! - Thread hijacking (context manipulation)
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 use super::process::RemoteProcess;
 use super::thread::{create_remote_thread, RemoteThreadOptions};
 use crate::error::{Result, WraithError};

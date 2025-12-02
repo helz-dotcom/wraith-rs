@@ -1,5 +1,11 @@
 //! Thread enumeration
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 use crate::arch::segment;
 use crate::error::{Result, WraithError};
 

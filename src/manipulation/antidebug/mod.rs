@@ -5,6 +5,7 @@
 
 mod heap_flags;
 mod peb_flags;
+#[cfg(feature = "std")]
 mod thread_hide;
 
 pub use heap_flags::{check_heap_flags, clear_heap_flags};
@@ -12,6 +13,7 @@ pub use peb_flags::{
     check_being_debugged, check_nt_global_flag, clear_being_debugged, clear_nt_global_flag,
     full_peb_cleanup,
 };
+#[cfg(feature = "std")]
 pub use thread_hide::{get_hidden_threads, hide_current_thread, hide_thread, is_thread_hidden};
 
 use crate::error::Result;
@@ -63,8 +65,8 @@ impl DebugStatus {
     }
 }
 
-impl std::fmt::Display for DebugStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for DebugStatus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "Debug Status:")?;
         writeln!(
             f,
