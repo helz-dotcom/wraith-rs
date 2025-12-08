@@ -27,8 +27,15 @@ inline-hook = ["hooks", "dep:iced-x86"]
 antidebug = []
 remote = ["syscalls"]
 
-# all features
+# kernel mode features
+kernel = ["alloc"]  # kernel driver support (no_std + alloc)
+kernel-client = ["std"]  # usermode client for kernel driver communication
+
+# all features (usermode)
 full = ["std", "navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
+
+# all features including kernel
+full-with-kernel = ["full", "kernel-client"]
 
 # optional integrations
 logging = ["dep:log"]

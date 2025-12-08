@@ -45,6 +45,12 @@ pub mod structures;
 pub mod util;
 pub mod version;
 
+#[cfg(feature = "kernel")]
+pub mod km;
+
+#[cfg(feature = "kernel-client")]
+pub mod km_client;
+
 // re-exports for convenience
 pub use error::{Result, WraithError};
 pub use structures::{Peb, Teb};

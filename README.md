@@ -57,6 +57,8 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | **VMT Hooking** | Hook C++ virtual functions via vtable modification or shadow VMT |
 | **Anti-Debug** | Manipulate PEB.BeingDebugged, NtGlobalFlag, heap flags, hide threads |
 | **Remote Process** | Cross-process memory read/write, module enumeration, thread creation, injection |
+| **Kernel Driver** | Full kernel driver development support with IOCTL, shared memory, and process operations |
+| **KM↔UM Communication** | Usermode client library for interacting with kernel drivers |
 
 ## Comparison with Other Libraries
 
@@ -72,6 +74,7 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | Hook detection | Pattern + disk comparison | No | No | No |
 | Remote process ops | Full (read/write/inject) | Manual | Manual | No |
 | Instruction decoding | iced-x86 powered | No | No | No |
+| Kernel driver support | Full (IOCTL, MDL, process ops) | No | No | No |
 | Zero dependencies* | Yes | Yes | Yes | Yes |
 
 *Core functionality has no required dependencies. Optional `log` and `iced-x86` integration available.
@@ -115,7 +118,12 @@ inline-hook = ["hooks"]   # Comprehensive hooking with iced-x86 instruction deco
 antidebug = []            # Anti-debugging techniques
 remote = ["syscalls"]     # Cross-process operations and injection
 
+# Kernel mode features
+kernel = ["alloc"]        # Kernel driver support (no_std + alloc)
+kernel-client = ["std"]   # Usermode client for kernel driver communication
+
 full = ["navigation", "unlink", "manual-map", "syscalls", "spoof", "hooks", "inline-hook", "antidebug", "remote"]
+full-with-kernel = ["full", "kernel-client"]  # All features including kernel client
 ```
 
 Note: The `inline-hook` feature automatically includes `iced-x86` for proper x86/x64 instruction decoding and relocation.
@@ -532,6 +540,202 @@ let result = inject_shellcode(&proc, &shellcode)?;  // CreateRemoteThread
 let result = inject_via_section(&proc, &data, true)?;  // NtMapViewOfSection
 ```
 
+### Kernel Driver Development
+
+The `kernel` feature provides full support for Windows kernel driver development:
+
+```rust
+#![no_std]
+#![no_main]
+
+extern crate alloc;
+
+use wraith::km::{
+    Driver, Device, DeviceBuilder, DeviceType,
+    Irp, IrpMajorFunction, IoctlDispatcher,
+    KmProcess, KernelMemory, PhysicalMemory,
+    PoolAllocator, PoolType, SpinLock,
+    UnicodeString,
+};
+use wraith::km::error::{KmResult, status};
+use wraith::km::ioctl::{Ioctl, IoctlCode, codes};
+use wraith::driver_entry;
+
+// Define your driver implementation
+struct MyDriver;
+
+impl wraith::km::driver::DriverImpl for MyDriver {
+    fn init(driver: &mut Driver, _registry_path: &UnicodeString) -> KmResult<()> {
+        // Create device
+        let device_name = UnicodeString::from_str("\\Device\\MyDriver")?;
+        let link_name = UnicodeString::from_str("\\DosDevices\\MyDriver")?;
+
+        let mut device = DeviceBuilder::new(driver)
+            .name(device_name)
+            .symbolic_link(link_name)
+            .device_type(DeviceType::Unknown)
+            .buffered_io()
+            .build()?;
+
+        Ok(())
+    }
+
+    fn unload(_driver: &Driver) {
+        // Cleanup
+    }
+
+    fn device_control(_device: *mut core::ffi::c_void, irp: &mut Irp) -> i32 {
+        let Some(ioctl) = Ioctl::from_irp(irp) else {
+            return status::STATUS_INVALID_PARAMETER;
+        };
+
+        match ioctl.function() {
+            0x800 => {
+                // Handle read memory request
+                if let Some(req) = ioctl.input::<ReadMemoryRequest>() {
+                    let mut proc = KmProcess::open(req.process_id)?;
+                    let data = proc.read_bytes(req.address, req.size as usize)?;
+                    // Copy to output buffer...
+                }
+                status::STATUS_SUCCESS
+            }
+            _ => status::STATUS_INVALID_DEVICE_REQUEST,
+        }
+    }
+}
+
+// Generate driver entry point
+driver_entry!(MyDriver);
+```
+
+#### Kernel Memory Operations
+
+```rust
+use wraith::km::memory::{PhysicalMemory, KernelMemory, Mdl, VirtualMemory};
+use wraith::km::allocator::{PoolAllocator, PoolType, PoolBuffer};
+
+// Pool allocation
+let allocator = PoolAllocator::non_paged();
+let ptr = allocator.allocate(4096)?;
+// ... use memory
+unsafe { allocator.free(ptr) };
+
+// Or use RAII wrapper
+let buffer = PoolBuffer::zeroed(4096, PoolType::NonPagedNx)?;
+buffer.as_mut_slice()[0..4].copy_from_slice(&[1, 2, 3, 4]);
+
+// Physical memory access
+let mut data = [0u8; 16];
+PhysicalMemory::read(0x1000, &mut data)?;
+PhysicalMemory::write(0x1000, &data)?;
+
+// Get physical address for virtual
+let phys = PhysicalMemory::get_physical_address(virtual_ptr);
+
+// MDL operations
+let mut mdl = Mdl::create(buffer_ptr, size)?;
+mdl.lock_pages(AccessMode::KernelMode, LockOperation::IoReadAccess)?;
+let system_addr = mdl.system_address()?;
+```
+
+#### Kernel Process Operations
+
+```rust
+use wraith::km::process::{KmProcess, Eprocess};
+
+// Open process by PID
+let mut proc = KmProcess::open(target_pid)?;
+
+// Read/write process memory
+let value: u32 = proc.read(address)?;
+proc.write(address, &new_value)?;
+
+// Read bytes
+let data = proc.read_bytes(address, size)?;
+proc.write_bytes(address, &data)?;
+
+// Allocate memory in target process
+let alloc = proc.allocate(0x1000, PAGE_EXECUTE_READWRITE, None)?;
+
+// Get module base
+let kernel32_base = proc.get_module_base(&wide_string("kernel32.dll"))?;
+
+// Access EPROCESS directly
+let eprocess = proc.eprocess();
+let cr3 = eprocess.cr3();
+let image_name = eprocess.image_file_name();
+```
+
+### Kernel Client (Usermode)
+
+The `kernel-client` feature provides a usermode API to communicate with kernel drivers:
+
+```rust
+use wraith::km_client::{DriverClient, ProcessOps, MemoryProtection};
+
+// Connect to driver
+let client = DriverClient::connect("\\\\.\\MyDriver")?;
+
+// Open process for memory operations
+let process = client.open_process(target_pid)?;
+
+// Read/write memory via driver
+let value: u32 = process.read(address)?;
+process.write(address, &new_value)?;
+
+// Read bytes
+let data = process.read_bytes(address, 256)?;
+process.write_bytes(address, &data)?;
+
+// Get module base
+let base = process.get_module_base("ntdll.dll")?;
+
+// Allocate memory
+let alloc = process.allocate(0x1000, MemoryProtection::READWRITE)?;
+process.write_bytes(alloc, &shellcode)?;
+
+// Change protection
+let old_prot = process.protect(address, 0x1000, MemoryProtection::EXECUTE_READ)?;
+
+// RAII memory allocation
+use wraith::km_client::RemoteMemory;
+let mem = RemoteMemory::allocate(&process, 0x1000, MemoryProtection::READWRITE)?;
+mem.write(&data)?;
+// Automatically freed on drop
+
+// Pattern scanning in remote process
+use wraith::km_client::MemoryScanner;
+let scanner = MemoryScanner::new(&process);
+let matches = scanner.scan_ida_pattern(start, size, "48 8B 05 ?? ?? ?? ??")?;
+```
+
+#### Shared Memory Communication
+
+```rust
+// Kernel side
+use wraith::km::shared::{SharedMemory, SharedBuffer};
+
+let mut shared = SharedMemory::create(0x10000)?;
+let user_ptr = shared.map_to_process(process_handle)?;
+
+// Use SharedBuffer for request/response
+let buffer = shared.as_mut::<SharedBuffer>().unwrap();
+buffer.init();
+
+// Check for requests from usermode
+if buffer.has_request() {
+    let data = buffer.request_data();
+    // Process request...
+    buffer.set_response(response_size);
+}
+
+// Or use ring buffer for streaming data
+use wraith::km::shared::SharedRingBuffer;
+let ring = SharedRingBuffer::init(&mut shared)?;
+ring.write(&data)?;
+let bytes_read = ring.read(&mut buffer)?;
+```
+
 ## Windows Version Support
 
 wraith-rs uses version-specific offset tables for accurate structure access:
@@ -553,6 +757,40 @@ Unknown versions fall back to Windows 10 offsets with a warning.
 - **x86_64**: Full support
 - **x86 (32-bit)**: Supported for most features
 - **ARM64**: Not currently supported
+
+## Building Kernel Drivers
+
+To build a kernel driver using wraith-rs:
+
+1. Install the Windows Driver Kit (WDK)
+2. Use a kernel-compatible Rust target (e.g., `x86_64-pc-windows-msvc` with custom linker settings)
+3. Configure your driver crate:
+
+```toml
+[dependencies]
+wraith-rs = { version = "0.1", default-features = false, features = ["kernel"] }
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[lib]
+crate-type = ["staticlib"]
+```
+
+4. Set up `#![no_std]` and provide a global allocator:
+
+```rust
+#![no_std]
+#![no_main]
+
+extern crate alloc;
+
+use wraith::km::allocator::KernelAllocator;
+
+#[global_allocator]
+static ALLOCATOR: KernelAllocator = KernelAllocator;
+```
 
 ## Safety
 
