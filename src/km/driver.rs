@@ -181,7 +181,8 @@ impl DriverBuilder {
     /// # Safety
     /// ptr must be valid DRIVER_OBJECT
     pub unsafe fn new(ptr: *mut DriverObjectRaw) -> Option<Self> {
-        Driver::from_raw(ptr).map(|driver| Self { driver })
+        // SAFETY: caller ensures ptr is valid
+        unsafe { Driver::from_raw(ptr) }.map(|driver| Self { driver })
     }
 
     /// set unload routine
@@ -275,52 +276,59 @@ macro_rules! driver_entry {
             driver_object: *mut $crate::km::driver::DriverObjectRaw,
             registry_path: *const $crate::km::driver::UnicodeStringRaw,
         ) -> $crate::km::error::NtStatus {
+            // SAFETY: called from kernel with valid parameters
+            unsafe { __driver_entry_impl::<$impl_type>(driver_object, registry_path) }
+        }
+
+        unsafe fn __driver_entry_impl<T: $crate::km::driver::DriverImpl>(
+            driver_object: *mut $crate::km::driver::DriverObjectRaw,
+            registry_path: *const $crate::km::driver::UnicodeStringRaw,
+        ) -> $crate::km::error::NtStatus {
             use $crate::km::driver::DriverImpl;
             use $crate::km::error::status;
 
+            // SAFETY: driver_object is provided by the kernel
             let Some(mut driver) = (unsafe { $crate::km::Driver::from_raw(driver_object) }) else {
                 return status::STATUS_INVALID_PARAMETER;
             };
 
             // set up dispatch routines
-            driver.set_unload(__driver_unload);
-            driver.set_major_function($crate::km::IrpMajorFunction::Create, __dispatch_create);
-            driver.set_major_function($crate::km::IrpMajorFunction::Close, __dispatch_close);
-            driver.set_major_function($crate::km::IrpMajorFunction::DeviceControl, __dispatch_device_control);
-            driver.set_major_function($crate::km::IrpMajorFunction::Read, __dispatch_read);
-            driver.set_major_function($crate::km::IrpMajorFunction::Write, __dispatch_write);
+            driver.set_unload(__driver_unload::<T>);
+            driver.set_major_function($crate::km::IrpMajorFunction::Create, __dispatch_create::<T>);
+            driver.set_major_function($crate::km::IrpMajorFunction::Close, __dispatch_close::<T>);
+            driver.set_major_function($crate::km::IrpMajorFunction::DeviceControl, __dispatch_device_control::<T>);
+            driver.set_major_function($crate::km::IrpMajorFunction::Read, __dispatch_read::<T>);
+            driver.set_major_function($crate::km::IrpMajorFunction::Write, __dispatch_write::<T>);
 
             // create unicode string wrapper for registry path
-            let reg_path = if !registry_path.is_null() {
-                unsafe { &*(registry_path as *const $crate::km::string::UnicodeStringRaw) }
-            } else {
+            if registry_path.is_null() {
                 return status::STATUS_INVALID_PARAMETER;
-            };
+            }
 
             let reg_string = $crate::km::UnicodeString::empty(); // simplified
 
-            match <$impl_type>::init(&mut driver, &reg_string) {
+            match T::init(&mut driver, &reg_string) {
                 Ok(()) => status::STATUS_SUCCESS,
                 Err(e) => e.to_ntstatus(),
             }
         }
 
-        unsafe extern "system" fn __driver_unload(driver_object: *mut $crate::km::driver::DriverObjectRaw) {
-            use $crate::km::driver::DriverImpl;
-
+        unsafe extern "system" fn __driver_unload<T: $crate::km::driver::DriverImpl>(
+            driver_object: *mut $crate::km::driver::DriverObjectRaw
+        ) {
+            // SAFETY: driver_object is valid from kernel
             if let Some(driver) = unsafe { $crate::km::Driver::from_raw(driver_object) } {
-                <$impl_type>::unload(&driver);
+                T::unload(&driver);
             }
         }
 
-        unsafe extern "system" fn __dispatch_create(
+        unsafe extern "system" fn __dispatch_create<T: $crate::km::driver::DriverImpl>(
             device: *mut core::ffi::c_void,
             irp: *mut core::ffi::c_void,
         ) -> $crate::km::error::NtStatus {
-            use $crate::km::driver::DriverImpl;
-
+            // SAFETY: irp is valid from kernel
             if let Some(mut irp_wrapper) = unsafe { $crate::km::Irp::from_raw(irp) } {
-                let status = <$impl_type>::create(device, &mut irp_wrapper);
+                let status = T::create(device, &mut irp_wrapper);
                 irp_wrapper.complete(status);
                 status
             } else {
@@ -328,14 +336,13 @@ macro_rules! driver_entry {
             }
         }
 
-        unsafe extern "system" fn __dispatch_close(
+        unsafe extern "system" fn __dispatch_close<T: $crate::km::driver::DriverImpl>(
             device: *mut core::ffi::c_void,
             irp: *mut core::ffi::c_void,
         ) -> $crate::km::error::NtStatus {
-            use $crate::km::driver::DriverImpl;
-
+            // SAFETY: irp is valid from kernel
             if let Some(mut irp_wrapper) = unsafe { $crate::km::Irp::from_raw(irp) } {
-                let status = <$impl_type>::close(device, &mut irp_wrapper);
+                let status = T::close(device, &mut irp_wrapper);
                 irp_wrapper.complete(status);
                 status
             } else {
@@ -343,14 +350,13 @@ macro_rules! driver_entry {
             }
         }
 
-        unsafe extern "system" fn __dispatch_device_control(
+        unsafe extern "system" fn __dispatch_device_control<T: $crate::km::driver::DriverImpl>(
             device: *mut core::ffi::c_void,
             irp: *mut core::ffi::c_void,
         ) -> $crate::km::error::NtStatus {
-            use $crate::km::driver::DriverImpl;
-
+            // SAFETY: irp is valid from kernel
             if let Some(mut irp_wrapper) = unsafe { $crate::km::Irp::from_raw(irp) } {
-                let status = <$impl_type>::device_control(device, &mut irp_wrapper);
+                let status = T::device_control(device, &mut irp_wrapper);
                 irp_wrapper.complete(status);
                 status
             } else {
@@ -358,14 +364,13 @@ macro_rules! driver_entry {
             }
         }
 
-        unsafe extern "system" fn __dispatch_read(
+        unsafe extern "system" fn __dispatch_read<T: $crate::km::driver::DriverImpl>(
             device: *mut core::ffi::c_void,
             irp: *mut core::ffi::c_void,
         ) -> $crate::km::error::NtStatus {
-            use $crate::km::driver::DriverImpl;
-
+            // SAFETY: irp is valid from kernel
             if let Some(mut irp_wrapper) = unsafe { $crate::km::Irp::from_raw(irp) } {
-                let status = <$impl_type>::read(device, &mut irp_wrapper);
+                let status = T::read(device, &mut irp_wrapper);
                 irp_wrapper.complete(status);
                 status
             } else {
@@ -373,14 +378,13 @@ macro_rules! driver_entry {
             }
         }
 
-        unsafe extern "system" fn __dispatch_write(
+        unsafe extern "system" fn __dispatch_write<T: $crate::km::driver::DriverImpl>(
             device: *mut core::ffi::c_void,
             irp: *mut core::ffi::c_void,
         ) -> $crate::km::error::NtStatus {
-            use $crate::km::driver::DriverImpl;
-
+            // SAFETY: irp is valid from kernel
             if let Some(mut irp_wrapper) = unsafe { $crate::km::Irp::from_raw(irp) } {
-                let status = <$impl_type>::write(device, &mut irp_wrapper);
+                let status = T::write(device, &mut irp_wrapper);
                 irp_wrapper.complete(status);
                 status
             } else {

@@ -169,7 +169,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     let aligned = (raw + align - 1) & !(align - 1);
                     // store original pointer before aligned address
                     let aligned_ptr = aligned as *mut u8;
-                    *((aligned_ptr as *mut usize).offset(-1)) = raw;
+                    // SAFETY: aligned_ptr - sizeof(usize) is within our allocation
+                    unsafe {
+                        *((aligned_ptr as *mut usize).offset(-1)) = raw;
+                    }
                     aligned_ptr
                 }
                 Err(_) => core::ptr::null_mut(),
@@ -188,7 +191,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
             ptr
         } else {
             // retrieve original pointer
-            let raw = *((ptr as *mut usize).offset(-1));
+            // SAFETY: we stored the original pointer at ptr - sizeof(usize) during alloc
+            let raw = unsafe { *((ptr as *mut usize).offset(-1)) };
             raw as *mut u8
         };
 

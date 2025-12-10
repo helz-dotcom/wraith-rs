@@ -27,6 +27,10 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+// re-export alloc for kernel module when std is available
+#[cfg(all(feature = "std", feature = "kernel"))]
+extern crate alloc;
+
 pub mod arch;
 pub mod error;
 #[cfg(any(

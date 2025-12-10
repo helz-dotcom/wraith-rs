@@ -53,7 +53,7 @@ impl SharedMemory {
                 0,
                 core::ptr::null_mut(),
                 &mut view_size,
-                ViewShare as u32,
+                VIEW_SHARE,
                 0,
                 PAGE_READWRITE,
             )
@@ -90,7 +90,7 @@ impl SharedMemory {
                 0,
                 core::ptr::null_mut(),
                 &mut view_size,
-                ViewShare as u32,
+                VIEW_SHARE,
                 0,
                 PAGE_READWRITE,
             )
@@ -180,10 +180,11 @@ impl SharedRingBuffer {
 
     /// create in shared memory
     pub fn init(memory: &mut SharedMemory) -> KmResult<&mut Self> {
-        if memory.size() < Self::MIN_SIZE {
+        let mem_size = memory.size();
+        if mem_size < Self::MIN_SIZE {
             return Err(KmError::BufferTooSmall {
                 required: Self::MIN_SIZE,
-                provided: memory.size(),
+                provided: mem_size,
             });
         }
 
@@ -193,7 +194,7 @@ impl SharedRingBuffer {
 
         header.read_index = 0;
         header.write_index = 0;
-        header.size = (memory.size() - core::mem::size_of::<SharedRingBuffer>()) as u32;
+        header.size = (mem_size - core::mem::size_of::<SharedRingBuffer>()) as u32;
         header._padding = 0;
 
         Ok(header)
@@ -208,8 +209,11 @@ impl SharedRingBuffer {
 
     /// available space for writing
     pub fn available_write(&self) -> u32 {
-        let read = core::sync::atomic::AtomicU32::from_ptr(&self.read_index as *const _ as *mut _)
-            .load(core::sync::atomic::Ordering::Acquire);
+        // SAFETY: read_index is a valid u32 that we're reading atomically
+        let read = unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.read_index as *const _ as *mut _)
+                .load(core::sync::atomic::Ordering::Acquire)
+        };
         let write = self.write_index;
 
         if write >= read {
@@ -222,8 +226,11 @@ impl SharedRingBuffer {
     /// available data for reading
     pub fn available_read(&self) -> u32 {
         let read = self.read_index;
-        let write = core::sync::atomic::AtomicU32::from_ptr(&self.write_index as *const _ as *mut _)
-            .load(core::sync::atomic::Ordering::Acquire);
+        // SAFETY: write_index is a valid u32 that we're reading atomically
+        let write = unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.write_index as *const _ as *mut _)
+                .load(core::sync::atomic::Ordering::Acquire)
+        };
 
         if write >= read {
             write - read
@@ -259,8 +266,11 @@ impl SharedRingBuffer {
 
         // update write index with release ordering
         let new_write = (write + len) % self.size;
-        core::sync::atomic::AtomicU32::from_ptr(&self.write_index as *const _ as *mut _)
-            .store(new_write, core::sync::atomic::Ordering::Release);
+        // SAFETY: write_index is a valid u32 that we're storing atomically
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.write_index as *const _ as *mut _)
+                .store(new_write, core::sync::atomic::Ordering::Release);
+        }
 
         Ok(())
     }
@@ -291,8 +301,11 @@ impl SharedRingBuffer {
 
         // update read index with release ordering
         let new_read = (read + len) % self.size;
-        core::sync::atomic::AtomicU32::from_ptr(&self.read_index as *const _ as *mut _)
-            .store(new_read, core::sync::atomic::Ordering::Release);
+        // SAFETY: read_index is a valid u32 that we're storing atomically
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.read_index as *const _ as *mut _)
+                .store(new_read, core::sync::atomic::Ordering::Release);
+        }
 
         Ok(len as usize)
     }
@@ -341,29 +354,41 @@ impl SharedBuffer {
 
     /// check if request is pending
     pub fn has_request(&self) -> bool {
-        let flags = core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
-            .load(core::sync::atomic::Ordering::Acquire);
+        // SAFETY: flags is a valid u32 that we're reading atomically
+        let flags = unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
+                .load(core::sync::atomic::Ordering::Acquire)
+        };
         (flags & Self::FLAG_REQUEST_PENDING) != 0
     }
 
     /// check if response is ready
     pub fn has_response(&self) -> bool {
-        let flags = core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
-            .load(core::sync::atomic::Ordering::Acquire);
+        // SAFETY: flags is a valid u32 that we're reading atomically
+        let flags = unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
+                .load(core::sync::atomic::Ordering::Acquire)
+        };
         (flags & Self::FLAG_RESPONSE_READY) != 0
     }
 
     /// mark request as processed, set response
     pub fn set_response(&mut self, size: u32) {
         self.response_size = size;
-        core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
-            .store(Self::FLAG_RESPONSE_READY, core::sync::atomic::Ordering::Release);
+        // SAFETY: flags is a valid u32 that we're storing atomically
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
+                .store(Self::FLAG_RESPONSE_READY, core::sync::atomic::Ordering::Release);
+        }
     }
 
     /// clear request (kernel side)
     pub fn clear_request(&mut self) {
-        core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
-            .store(0, core::sync::atomic::Ordering::Release);
+        // SAFETY: flags is a valid u32 that we're storing atomically
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.flags as *const _ as *mut _)
+                .store(0, core::sync::atomic::Ordering::Release);
+        }
     }
 }
 
@@ -391,12 +416,9 @@ impl ObjectAttributes {
     }
 }
 
-// section disposition
-#[repr(u32)]
-enum ViewShare {
-    ViewShare = 1,
-    ViewUnmap = 2,
-}
+// section disposition constants
+const VIEW_SHARE: u32 = 1;
+const VIEW_UNMAP: u32 = 2;
 
 // page protection
 const PAGE_READWRITE: u32 = 0x04;

@@ -69,17 +69,18 @@ pub enum DeviceCharacteristics {
     SecureOpen = 0x00000100,
 }
 
-/// device flags
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeviceFlags {
-    None = 0,
-    BufferedIo = 0x00000004,
-    DirectIo = 0x00000010,
-    DoExclusive = 0x00000800,
-    PowerPageable = 0x00001000,
-    DoBufferedIo = 0x00000004,
-    DoDirectIo = 0x00000010,
+/// device flags (bitflags)
+pub mod DeviceFlags {
+    pub const NONE: u32 = 0;
+    pub const BUFFERED_IO: u32 = 0x00000004;
+    pub const DIRECT_IO: u32 = 0x00000010;
+    pub const DO_EXCLUSIVE: u32 = 0x00000800;
+    pub const POWER_PAGEABLE: u32 = 0x00001000;
+    pub const DO_DEVICE_INITIALIZING: u32 = 0x00000080;
+
+    // aliases for compatibility
+    pub const DO_BUFFERED_IO: u32 = BUFFERED_IO;
+    pub const DO_DIRECT_IO: u32 = DIRECT_IO;
 }
 
 /// safe device object wrapper
@@ -114,18 +115,18 @@ impl Device {
     }
 
     /// add device flag
-    pub fn add_flag(&mut self, flag: DeviceFlags) {
+    pub fn add_flag(&mut self, flag: u32) {
         // SAFETY: we have exclusive access
         unsafe {
-            (*self.raw.as_ptr()).flags |= flag as u32;
+            (*self.raw.as_ptr()).flags |= flag;
         }
     }
 
     /// remove device flag
-    pub fn remove_flag(&mut self, flag: DeviceFlags) {
+    pub fn remove_flag(&mut self, flag: u32) {
         // SAFETY: we have exclusive access
         unsafe {
-            (*self.raw.as_ptr()).flags &= !(flag as u32);
+            (*self.raw.as_ptr()).flags &= !flag;
         }
     }
 
@@ -204,20 +205,17 @@ impl Device {
 
     /// set DO_BUFFERED_IO flag (for small data transfers)
     pub fn set_buffered_io(&mut self) {
-        self.add_flag(DeviceFlags::BufferedIo);
+        self.add_flag(DeviceFlags::BUFFERED_IO);
     }
 
     /// set DO_DIRECT_IO flag (for large data transfers)
     pub fn set_direct_io(&mut self) {
-        self.add_flag(DeviceFlags::DirectIo);
+        self.add_flag(DeviceFlags::DIRECT_IO);
     }
 
     /// clear the DO_DEVICE_INITIALIZING flag (required after device creation)
     pub fn initialization_complete(&mut self) {
-        // SAFETY: we have exclusive access
-        unsafe {
-            (*self.raw.as_ptr()).flags &= !0x00000080; // ~DO_DEVICE_INITIALIZING
-        }
+        self.remove_flag(DeviceFlags::DO_DEVICE_INITIALIZING);
     }
 }
 
@@ -295,13 +293,13 @@ impl<'a> DeviceBuilder<'a> {
 
     /// use buffered I/O
     pub fn buffered_io(mut self) -> Self {
-        self.flags |= DeviceFlags::BufferedIo as u32;
+        self.flags |= DeviceFlags::BUFFERED_IO;
         self
     }
 
     /// use direct I/O
     pub fn direct_io(mut self) -> Self {
-        self.flags |= DeviceFlags::DirectIo as u32;
+        self.flags |= DeviceFlags::DIRECT_IO;
         self
     }
 
@@ -319,7 +317,7 @@ impl<'a> DeviceBuilder<'a> {
         )?;
 
         if self.flags != 0 {
-            device.add_flag(unsafe { core::mem::transmute(self.flags) });
+            device.add_flag(self.flags);
         }
 
         if let Some(ref link) = self.symbolic_link {

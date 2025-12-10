@@ -35,7 +35,7 @@ pub mod string;
 pub mod sync;
 
 pub use allocator::{PoolAllocator, PoolType};
-pub use device::{Device, DeviceFlags, DeviceType};
+pub use device::{Device, DeviceFlags, DeviceType, DeviceCharacteristics};
 pub use driver::{Driver, DriverEntry, DriverUnload};
 pub use error::{KmError, KmResult};
 pub use ioctl::{Ioctl, IoctlCode, IoctlHandler, IoctlMethod, IoctlDispatcher};

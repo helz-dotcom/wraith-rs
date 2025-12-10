@@ -433,7 +433,7 @@ impl KmProcess {
                 // case-insensitive comparison
                 if name_slice.len() == module_name.len() {
                     let matches = name_slice.iter().zip(module_name.iter())
-                        .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase());
+                        .all(|(a, b)| to_lower_u16(*a) == to_lower_u16(*b));
 
                     if matches {
                         // DllBase is at offset 0x30 on x64
@@ -566,4 +566,14 @@ extern "system" {
     ) -> NtStatus;
 
     fn ZwClose(Handle: *mut c_void) -> NtStatus;
+}
+
+/// convert u16 to lowercase (ASCII only)
+#[inline]
+fn to_lower_u16(c: u16) -> u16 {
+    if c >= b'A' as u16 && c <= b'Z' as u16 {
+        c + 32
+    } else {
+        c
+    }
 }

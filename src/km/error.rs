@@ -2,9 +2,6 @@
 
 use core::fmt;
 
-#[cfg(feature = "alloc")]
-use alloc::string::String;
-
 /// NTSTATUS type alias
 pub type NtStatus = i32;
 
