@@ -74,7 +74,7 @@ impl RemoteModule {
             Ok(bytes_read)
         } else {
             Err(WraithError::ReadFailed {
-                address: address as u64,
+                address: u64::try_from(address).unwrap_or(u64::MAX),
                 size: buffer.len(),
             })
         }

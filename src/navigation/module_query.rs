@@ -64,7 +64,7 @@ impl<'a> ModuleQuery<'a> {
         }
 
         Err(WraithError::AddressNotInModule {
-            address: address as u64,
+            address: u64::try_from(address).unwrap_or(u64::MAX),
         })
     }
 
@@ -77,7 +77,7 @@ impl<'a> ModuleQuery<'a> {
         }
 
         Err(WraithError::AddressNotInModule {
-            address: base as u64,
+            address: u64::try_from(base).unwrap_or(u64::MAX),
         })
     }
 

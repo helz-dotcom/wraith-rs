@@ -346,7 +346,7 @@ impl VirtualMemory {
 
         if !status::nt_success(status) {
             return Err(KmError::VirtualMemoryFailed {
-                address: address as u64,
+                address: address as usize as u64,
                 size: 0,
                 reason: "ZwFreeVirtualMemory failed",
             });
@@ -378,7 +378,7 @@ impl VirtualMemory {
 
         if !status::nt_success(status) {
             return Err(KmError::VirtualMemoryFailed {
-                address: address as u64,
+                address: address as usize as u64,
                 size,
                 reason: "ZwProtectVirtualMemory failed",
             });

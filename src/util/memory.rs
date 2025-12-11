@@ -50,7 +50,7 @@ pub fn protect_memory(address: usize, size: usize, protection: u32) -> Result<u3
 
     if result == 0 {
         Err(WraithError::ProtectionChangeFailed {
-            address: address as u64,
+            address: u64::try_from(address).unwrap_or(u64::MAX),
             size,
         })
     } else {

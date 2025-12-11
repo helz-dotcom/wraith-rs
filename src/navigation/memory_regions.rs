@@ -37,44 +37,69 @@ pub enum MemoryType {
     Unknown,
 }
 
+/// macro for generating protection check methods with `#[must_use]`
+macro_rules! define_protection_check {
+    ($(#[$attr:meta])* $name:ident, $($flag:ident)|+) => {
+        $(#[$attr])*
+        #[must_use]
+        pub fn $name(&self) -> bool {
+            $(self.protect & $flag != 0)||+
+        }
+    };
+}
+
 impl MemoryRegion {
-    /// check if region is executable
-    pub fn is_executable(&self) -> bool {
-        (self.protect & PAGE_EXECUTE) != 0
-            || (self.protect & PAGE_EXECUTE_READ) != 0
-            || (self.protect & PAGE_EXECUTE_READWRITE) != 0
-            || (self.protect & PAGE_EXECUTE_WRITECOPY) != 0
-    }
+    define_protection_check!(
+        /// check if region is executable
+        is_executable,
+        PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    );
 
-    /// check if region is readable
-    pub fn is_readable(&self) -> bool {
-        (self.protect & PAGE_READONLY) != 0
-            || (self.protect & PAGE_READWRITE) != 0
-            || (self.protect & PAGE_WRITECOPY) != 0
-            || (self.protect & PAGE_EXECUTE_READ) != 0
-            || (self.protect & PAGE_EXECUTE_READWRITE) != 0
-            || (self.protect & PAGE_EXECUTE_WRITECOPY) != 0
-    }
+    define_protection_check!(
+        /// check if region is readable
+        is_readable,
+        PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+        PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    );
 
-    /// check if region is writable
-    pub fn is_writable(&self) -> bool {
-        (self.protect & PAGE_READWRITE) != 0
-            || (self.protect & PAGE_WRITECOPY) != 0
-            || (self.protect & PAGE_EXECUTE_READWRITE) != 0
-            || (self.protect & PAGE_EXECUTE_WRITECOPY) != 0
-    }
+    define_protection_check!(
+        /// check if region is writable
+        is_writable,
+        PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    );
 
     /// check if region is committed (accessible)
+    #[must_use]
     pub fn is_committed(&self) -> bool {
         self.state == MemoryState::Commit
     }
 
     /// check if this is part of an image
+    #[must_use]
     pub fn is_image(&self) -> bool {
         self.memory_type == MemoryType::Image
     }
 
+    /// check if region is private memory
+    #[must_use]
+    pub fn is_private(&self) -> bool {
+        self.memory_type == MemoryType::Private
+    }
+
+    /// check if region is reserved (not yet committed)
+    #[must_use]
+    pub fn is_reserved(&self) -> bool {
+        self.state == MemoryState::Reserve
+    }
+
+    /// check if region is free (not allocated)
+    #[must_use]
+    pub fn is_free(&self) -> bool {
+        self.state == MemoryState::Free
+    }
+
     /// get protection string (e.g., "RWX", "R--", etc.)
+    #[must_use]
     pub fn protection_string(&self) -> &'static str {
         match self.protect {
             PAGE_NOACCESS => "---",
@@ -217,7 +242,7 @@ pub fn query_region(address: usize) -> Result<MemoryRegion> {
 
     if result == 0 {
         return Err(WraithError::ReadFailed {
-            address: address as u64,
+            address: u64::try_from(address).unwrap_or(u64::MAX),
             size: 0,
         });
     }

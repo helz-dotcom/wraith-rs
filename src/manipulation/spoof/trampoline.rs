@@ -137,7 +137,7 @@ impl SpoofTrampoline {
     pub unsafe fn write_code(&self, code: &[u8]) -> Result<()> {
         if code.len() > self.size {
             return Err(WraithError::WriteFailed {
-                address: self.address as u64,
+                address: u64::try_from(self.address).unwrap_or(u64::MAX),
                 size: code.len(),
             });
         }

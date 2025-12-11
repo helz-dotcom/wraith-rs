@@ -27,7 +27,8 @@ mod spoofed;
 mod trampoline;
 
 pub use gadget::{
-    Gadget, GadgetFinder, GadgetType, JmpGadget, RetGadget,
+    Gadget, GadgetFinder, GadgetSearch, GadgetType, GadgetPattern,
+    JmpGadget, RetGadget, Register,
 };
 #[cfg(feature = "std")]
 pub use gadget::GadgetCache;

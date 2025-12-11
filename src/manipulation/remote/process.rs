@@ -124,9 +124,9 @@ impl RemoteProcess {
 
     /// read memory from the remote process
     pub fn read(&self, address: usize, buffer: &mut [u8]) -> Result<usize> {
-        nt_read_virtual_memory(self.handle, address, buffer).map_err(|e| {
+        nt_read_virtual_memory(self.handle, address, buffer).map_err(|_| {
             WraithError::ReadFailed {
-                address: address as u64,
+                address: u64::try_from(address).unwrap_or(u64::MAX),
                 size: buffer.len(),
             }
         })
@@ -179,7 +179,7 @@ impl RemoteProcess {
     pub fn write(&self, address: usize, buffer: &[u8]) -> Result<usize> {
         nt_write_virtual_memory(self.handle, address, buffer).map_err(|_| {
             WraithError::WriteFailed {
-                address: address as u64,
+                address: u64::try_from(address).unwrap_or(u64::MAX),
                 size: buffer.len(),
             }
         })
@@ -251,7 +251,7 @@ impl RemoteProcess {
     pub fn protect(&self, address: usize, size: usize, protection: u32) -> Result<u32> {
         nt_protect_virtual_memory(self.handle, address, size, protection).map_err(|_| {
             WraithError::ProtectionChangeFailed {
-                address: address as u64,
+                address: u64::try_from(address).unwrap_or(u64::MAX),
                 size,
             }
         })

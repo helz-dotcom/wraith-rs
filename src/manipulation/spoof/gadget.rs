@@ -2,6 +2,29 @@
 //!
 //! Scans system modules (ntdll, kernel32, etc.) for code gadgets that can be
 //! used as legitimate-looking return addresses for syscall spoofing.
+//!
+//! # Builder API
+//!
+//! The recommended way to find gadgets is using the builder pattern:
+//!
+//! ```ignore
+//! // find jmp rbx gadgets
+//! let gadgets = GadgetFinder::new()?
+//!     .jmp(Register::Rbx)
+//!     .in_module("ntdll.dll")
+//!     .find()?;
+//!
+//! // find any jmp with wildcard
+//! let gadgets = GadgetFinder::new()?
+//!     .pattern("jmp ???")
+//!     .in_module("kernel32.dll")
+//!     .find()?;
+//!
+//! // find specific pattern
+//! let gadgets = GadgetFinder::new()?
+//!     .pattern("jmp rbx")
+//!     .find_in_system_modules()?;
+//! ```
 
 use crate::error::{Result, WraithError};
 use crate::navigation::ModuleQuery;
@@ -82,6 +105,7 @@ pub enum GadgetType {
 impl GadgetType {
     /// get the bytes that make up this gadget type
     #[cfg(target_arch = "x86_64")]
+    #[must_use]
     pub fn bytes(&self) -> &'static [u8] {
         match self {
             Self::JmpRbx => &[0xFF, 0xE3],        // jmp rbx
@@ -102,6 +126,7 @@ impl GadgetType {
     }
 
     /// get friendly name for this gadget type
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Self::JmpRbx => "jmp rbx",
@@ -118,6 +143,358 @@ impl GadgetType {
             Self::AddRspRet { offset: _ } => "add rsp, N; ret",
             Self::PopRet { .. } => "pop reg; ret",
             Self::PushRbxRet => "push rbx; ret",
+        }
+    }
+
+    /// parse a gadget type from a pattern string
+    /// supports wildcards: "jmp ???" matches any jmp reg
+    #[must_use]
+    pub fn from_pattern(pattern: &str) -> Option<GadgetPattern> {
+        let pattern = pattern.trim().to_lowercase();
+        let parts: Vec<&str> = pattern.split_whitespace().collect();
+
+        if parts.is_empty() {
+            return None;
+        }
+
+        match parts[0] {
+            "jmp" => {
+                if parts.len() < 2 {
+                    return None;
+                }
+                let operand = parts[1];
+                if operand == "???" {
+                    Some(GadgetPattern::JmpAny)
+                } else if let Some(reg) = Register::from_str(operand) {
+                    if operand.starts_with('[') && operand.ends_with(']') {
+                        Some(GadgetPattern::JmpIndirect(reg))
+                    } else {
+                        Some(GadgetPattern::Jmp(reg))
+                    }
+                } else if operand.starts_with('[') && operand.ends_with(']') {
+                    let inner = &operand[1..operand.len()-1];
+                    if inner == "???" {
+                        Some(GadgetPattern::JmpIndirectAny)
+                    } else if let Some(reg) = Register::from_str(inner) {
+                        Some(GadgetPattern::JmpIndirect(reg))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "call" => {
+                if parts.len() < 2 {
+                    return None;
+                }
+                let operand = parts[1];
+                if operand == "???" {
+                    Some(GadgetPattern::CallAny)
+                } else if let Some(reg) = Register::from_str(operand) {
+                    Some(GadgetPattern::Call(reg))
+                } else {
+                    None
+                }
+            }
+            "ret" => Some(GadgetPattern::Ret),
+            "pop" => {
+                if parts.len() < 2 {
+                    return Some(GadgetPattern::PopRetAny);
+                }
+                let operand = parts[1].trim_end_matches(';');
+                if operand == "???" {
+                    Some(GadgetPattern::PopRetAny)
+                } else if let Some(reg) = Register::from_str(operand) {
+                    Some(GadgetPattern::PopRet(reg))
+                } else {
+                    None
+                }
+            }
+            "add" => {
+                // "add rsp, ???; ret" or "add rsp, N; ret"
+                if parts.len() >= 3 && parts[1].trim_end_matches(',') == "rsp" {
+                    Some(GadgetPattern::AddRspRet)
+                } else {
+                    None
+                }
+            }
+            "???" => {
+                // wildcard instruction - match the operand
+                if parts.len() < 2 {
+                    Some(GadgetPattern::Any)
+                } else {
+                    let operand = parts[1];
+                    if let Some(reg) = Register::from_str(operand) {
+                        Some(GadgetPattern::AnyWithReg(reg))
+                    } else {
+                        Some(GadgetPattern::Any)
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+/// x86-64 registers for gadget operands
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Register {
+    Rax,
+    Rbx,
+    Rcx,
+    Rdx,
+    Rsi,
+    Rdi,
+    Rbp,
+    Rsp,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+}
+
+impl Register {
+    /// parse register from string
+    #[must_use]
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "rax" => Some(Self::Rax),
+            "rbx" => Some(Self::Rbx),
+            "rcx" => Some(Self::Rcx),
+            "rdx" => Some(Self::Rdx),
+            "rsi" => Some(Self::Rsi),
+            "rdi" => Some(Self::Rdi),
+            "rbp" => Some(Self::Rbp),
+            "rsp" => Some(Self::Rsp),
+            "r8" => Some(Self::R8),
+            "r9" => Some(Self::R9),
+            "r10" => Some(Self::R10),
+            "r11" => Some(Self::R11),
+            "r12" => Some(Self::R12),
+            "r13" => Some(Self::R13),
+            "r14" => Some(Self::R14),
+            "r15" => Some(Self::R15),
+            _ => None,
+        }
+    }
+
+    /// get the register name
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Rax => "rax",
+            Self::Rbx => "rbx",
+            Self::Rcx => "rcx",
+            Self::Rdx => "rdx",
+            Self::Rsi => "rsi",
+            Self::Rdi => "rdi",
+            Self::Rbp => "rbp",
+            Self::Rsp => "rsp",
+            Self::R8 => "r8",
+            Self::R9 => "r9",
+            Self::R10 => "r10",
+            Self::R11 => "r11",
+            Self::R12 => "r12",
+            Self::R13 => "r13",
+            Self::R14 => "r14",
+            Self::R15 => "r15",
+        }
+    }
+}
+
+/// pattern for gadget matching (supports wildcards)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GadgetPattern {
+    /// jmp reg
+    Jmp(Register),
+    /// jmp [reg]
+    JmpIndirect(Register),
+    /// any jmp (wildcard)
+    JmpAny,
+    /// any jmp [reg] (wildcard)
+    JmpIndirectAny,
+    /// call reg
+    Call(Register),
+    /// any call (wildcard)
+    CallAny,
+    /// ret
+    Ret,
+    /// add rsp, N; ret
+    AddRspRet,
+    /// pop reg; ret
+    PopRet(Register),
+    /// any pop; ret
+    PopRetAny,
+    /// match any gadget
+    Any,
+    /// match any gadget using specific register
+    AnyWithReg(Register),
+}
+
+impl GadgetPattern {
+    /// check if a gadget type matches this pattern
+    #[must_use]
+    pub fn matches(&self, gadget: &GadgetType) -> bool {
+        match self {
+            Self::Jmp(reg) => match (reg, gadget) {
+                (Register::Rax, GadgetType::JmpRax) => true,
+                (Register::Rbx, GadgetType::JmpRbx) => true,
+                (Register::Rcx, GadgetType::JmpRcx) => true,
+                (Register::Rdx, GadgetType::JmpRdx) => true,
+                (Register::R8, GadgetType::JmpR8) => true,
+                (Register::R9, GadgetType::JmpR9) => true,
+                _ => false,
+            },
+            Self::JmpIndirect(reg) => match (reg, gadget) {
+                (Register::Rax, GadgetType::JmpIndirectRax) => true,
+                (Register::Rbx, GadgetType::JmpIndirectRbx) => true,
+                _ => false,
+            },
+            Self::JmpAny => matches!(
+                gadget,
+                GadgetType::JmpRax
+                    | GadgetType::JmpRbx
+                    | GadgetType::JmpRcx
+                    | GadgetType::JmpRdx
+                    | GadgetType::JmpR8
+                    | GadgetType::JmpR9
+            ),
+            Self::JmpIndirectAny => matches!(
+                gadget,
+                GadgetType::JmpIndirectRax | GadgetType::JmpIndirectRbx
+            ),
+            Self::Call(reg) => match (reg, gadget) {
+                (Register::Rax, GadgetType::CallRax) => true,
+                (Register::Rbx, GadgetType::CallRbx) => true,
+                _ => false,
+            },
+            Self::CallAny => matches!(gadget, GadgetType::CallRax | GadgetType::CallRbx),
+            Self::Ret => matches!(gadget, GadgetType::Ret),
+            Self::AddRspRet => matches!(gadget, GadgetType::AddRspRet { .. }),
+            Self::PopRet(reg) => {
+                if let GadgetType::PopRet { register } = gadget {
+                    Self::reg_index(*reg) == Some(*register)
+                } else {
+                    false
+                }
+            }
+            Self::PopRetAny => matches!(gadget, GadgetType::PopRet { .. }),
+            Self::Any => true,
+            Self::AnyWithReg(reg) => Self::gadget_uses_reg(gadget, *reg),
+        }
+    }
+
+    fn reg_index(reg: Register) -> Option<u8> {
+        match reg {
+            Register::Rax => Some(0),
+            Register::Rcx => Some(1),
+            Register::Rdx => Some(2),
+            Register::Rbx => Some(3),
+            Register::Rsp => Some(4),
+            Register::Rbp => Some(5),
+            Register::Rsi => Some(6),
+            Register::Rdi => Some(7),
+            Register::R8 => Some(8),
+            Register::R9 => Some(9),
+            Register::R10 => Some(10),
+            Register::R11 => Some(11),
+            Register::R12 => Some(12),
+            Register::R13 => Some(13),
+            Register::R14 => Some(14),
+            Register::R15 => Some(15),
+        }
+    }
+
+    fn gadget_uses_reg(gadget: &GadgetType, reg: Register) -> bool {
+        match (gadget, reg) {
+            (GadgetType::JmpRax | GadgetType::JmpIndirectRax | GadgetType::CallRax, Register::Rax) => true,
+            (GadgetType::JmpRbx | GadgetType::JmpIndirectRbx | GadgetType::CallRbx | GadgetType::PushRbxRet, Register::Rbx) => true,
+            (GadgetType::JmpRcx, Register::Rcx) => true,
+            (GadgetType::JmpRdx, Register::Rdx) => true,
+            (GadgetType::JmpR8, Register::R8) => true,
+            (GadgetType::JmpR9, Register::R9) => true,
+            (GadgetType::PopRet { register }, _) => Self::reg_index(reg) == Some(*register),
+            _ => false,
+        }
+    }
+
+    /// get all concrete gadget types matching this pattern
+    #[must_use]
+    pub fn matching_types(&self) -> Vec<GadgetType> {
+        match self {
+            Self::Jmp(reg) => match reg {
+                Register::Rax => vec![GadgetType::JmpRax],
+                Register::Rbx => vec![GadgetType::JmpRbx],
+                Register::Rcx => vec![GadgetType::JmpRcx],
+                Register::Rdx => vec![GadgetType::JmpRdx],
+                Register::R8 => vec![GadgetType::JmpR8],
+                Register::R9 => vec![GadgetType::JmpR9],
+                _ => vec![],
+            },
+            Self::JmpIndirect(reg) => match reg {
+                Register::Rax => vec![GadgetType::JmpIndirectRax],
+                Register::Rbx => vec![GadgetType::JmpIndirectRbx],
+                _ => vec![],
+            },
+            Self::JmpAny => vec![
+                GadgetType::JmpRax,
+                GadgetType::JmpRbx,
+                GadgetType::JmpRcx,
+                GadgetType::JmpRdx,
+                GadgetType::JmpR8,
+                GadgetType::JmpR9,
+            ],
+            Self::JmpIndirectAny => vec![GadgetType::JmpIndirectRax, GadgetType::JmpIndirectRbx],
+            Self::Call(reg) => match reg {
+                Register::Rax => vec![GadgetType::CallRax],
+                Register::Rbx => vec![GadgetType::CallRbx],
+                _ => vec![],
+            },
+            Self::CallAny => vec![GadgetType::CallRax, GadgetType::CallRbx],
+            Self::Ret => vec![GadgetType::Ret],
+            Self::AddRspRet => vec![], // handled specially (variable bytes)
+            Self::PopRet(_) => vec![], // handled specially (variable bytes)
+            Self::PopRetAny => vec![], // handled specially (variable bytes)
+            Self::Any => vec![
+                GadgetType::JmpRax,
+                GadgetType::JmpRbx,
+                GadgetType::JmpRcx,
+                GadgetType::JmpRdx,
+                GadgetType::JmpR8,
+                GadgetType::JmpR9,
+                GadgetType::JmpIndirectRax,
+                GadgetType::JmpIndirectRbx,
+                GadgetType::CallRax,
+                GadgetType::CallRbx,
+                GadgetType::Ret,
+                GadgetType::PushRbxRet,
+            ],
+            Self::AnyWithReg(reg) => {
+                let mut types = vec![];
+                for t in [
+                    GadgetType::JmpRax,
+                    GadgetType::JmpRbx,
+                    GadgetType::JmpRcx,
+                    GadgetType::JmpRdx,
+                    GadgetType::JmpR8,
+                    GadgetType::JmpR9,
+                    GadgetType::JmpIndirectRax,
+                    GadgetType::JmpIndirectRbx,
+                    GadgetType::CallRax,
+                    GadgetType::CallRbx,
+                    GadgetType::PushRbxRet,
+                ] {
+                    if Self::gadget_uses_reg(&t, *reg) {
+                        types.push(t);
+                    }
+                }
+                types
+            }
         }
     }
 }
@@ -139,6 +516,7 @@ pub struct Gadget {
 
 impl Gadget {
     /// check if gadget is still valid (bytes haven't changed)
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         let bytes = self.gadget_type.bytes();
         if bytes.is_empty() {
@@ -158,6 +536,7 @@ pub struct JmpGadget {
 }
 
 impl JmpGadget {
+    #[must_use]
     pub fn address(&self) -> usize {
         self.gadget.address
     }
@@ -172,6 +551,7 @@ pub struct RetGadget {
 }
 
 impl RetGadget {
+    #[must_use]
     pub fn address(&self) -> usize {
         self.gadget.address
     }
@@ -249,26 +629,31 @@ impl GadgetCache {
     }
 
     /// get preferred jmp rbx gadget (in ntdll)
+    #[must_use]
     pub fn jmp_rbx(&self) -> Option<&Gadget> {
         self.preferred_jmp_rbx.as_ref()
     }
 
     /// get preferred jmp rax gadget (in ntdll)
+    #[must_use]
     pub fn jmp_rax(&self) -> Option<&Gadget> {
         self.preferred_jmp_rax.as_ref()
     }
 
     /// get preferred ret gadget (in kernel32)
+    #[must_use]
     pub fn ret_gadget(&self) -> Option<&Gadget> {
         self.preferred_ret.as_ref()
     }
 
     /// get all gadgets of a specific type
+    #[must_use]
     pub fn get_by_type(&self, gadget_type: GadgetType) -> &[Gadget] {
         self.by_type.get(&gadget_type).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// get all gadgets in a specific module
+    #[must_use]
     pub fn get_by_module(&self, module_name: &str) -> &[Gadget] {
         self.by_module
             .get(&module_name.to_lowercase())
@@ -277,6 +662,7 @@ impl GadgetCache {
     }
 
     /// get first available jmp gadget (tries rbx, then rax)
+    #[must_use]
     pub fn any_jmp_gadget(&self) -> Option<&Gadget> {
         self.preferred_jmp_rbx
             .as_ref()
@@ -291,6 +677,18 @@ impl GadgetCache {
                     .get(&GadgetType::JmpRax)
                     .and_then(|v| v.first())
             })
+    }
+
+    /// search gadgets using a pattern
+    #[must_use]
+    pub fn find_by_pattern(&self, pattern: &GadgetPattern) -> Vec<&Gadget> {
+        let mut results = Vec::new();
+        for (gadget_type, gadgets) in &self.by_type {
+            if pattern.matches(gadget_type) {
+                results.extend(gadgets.iter());
+            }
+        }
+        results
     }
 }
 
@@ -608,6 +1006,223 @@ impl GadgetFinder {
         Err(WraithError::SyscallEnumerationFailed {
             reason: "no suitable ret gadget found".into(),
         })
+    }
+
+    // ========== Builder API ==========
+
+    /// start building a jmp gadget search
+    ///
+    /// # Example
+    /// ```ignore
+    /// let gadgets = GadgetFinder::new()?
+    ///     .jmp(Register::Rbx)
+    ///     .in_module("ntdll.dll")
+    ///     .find()?;
+    /// ```
+    #[must_use]
+    pub fn jmp(self, register: Register) -> GadgetSearch {
+        GadgetSearch {
+            finder: self,
+            pattern: GadgetPattern::Jmp(register),
+            module: None,
+            system_modules_only: false,
+        }
+    }
+
+    /// start building a jmp [reg] (indirect) gadget search
+    #[must_use]
+    pub fn jmp_indirect(self, register: Register) -> GadgetSearch {
+        GadgetSearch {
+            finder: self,
+            pattern: GadgetPattern::JmpIndirect(register),
+            module: None,
+            system_modules_only: false,
+        }
+    }
+
+    /// start building a call gadget search
+    #[must_use]
+    pub fn call(self, register: Register) -> GadgetSearch {
+        GadgetSearch {
+            finder: self,
+            pattern: GadgetPattern::Call(register),
+            module: None,
+            system_modules_only: false,
+        }
+    }
+
+    /// start building a ret gadget search
+    #[must_use]
+    pub fn ret(self) -> GadgetSearch {
+        GadgetSearch {
+            finder: self,
+            pattern: GadgetPattern::Ret,
+            module: None,
+            system_modules_only: false,
+        }
+    }
+
+    /// start building a pop; ret gadget search
+    #[must_use]
+    pub fn pop_ret(self, register: Register) -> GadgetSearch {
+        GadgetSearch {
+            finder: self,
+            pattern: GadgetPattern::PopRet(register),
+            module: None,
+            system_modules_only: false,
+        }
+    }
+
+    /// start building a search using a pattern string
+    ///
+    /// # Supported patterns
+    /// - `"jmp rbx"` - specific jmp
+    /// - `"jmp ???"` - any jmp reg (wildcard)
+    /// - `"jmp [rax]"` - indirect jmp
+    /// - `"call ???"` - any call
+    /// - `"ret"` - simple return
+    /// - `"pop ???; ret"` - any pop then ret
+    /// - `"??? rbx"` - any instruction using rbx
+    ///
+    /// # Example
+    /// ```ignore
+    /// let gadgets = GadgetFinder::new()?
+    ///     .pattern("jmp ???")
+    ///     .in_module("ntdll.dll")
+    ///     .find()?;
+    /// ```
+    pub fn pattern(self, pattern_str: &str) -> Result<GadgetSearch> {
+        let pattern = GadgetType::from_pattern(pattern_str).ok_or_else(|| {
+            WraithError::PatternParseFailed {
+                reason: format!("invalid gadget pattern: {}", pattern_str),
+            }
+        })?;
+
+        Ok(GadgetSearch {
+            finder: self,
+            pattern,
+            module: None,
+            system_modules_only: false,
+        })
+    }
+
+    /// find gadgets matching a pattern in a module
+    pub fn find_by_pattern(
+        &self,
+        module_name: &str,
+        pattern: &GadgetPattern,
+    ) -> Result<Vec<Gadget>> {
+        let mut results = Vec::new();
+
+        // handle concrete gadget types
+        for gadget_type in pattern.matching_types() {
+            if let Ok(gadgets) = self.find_gadgets_of_type(module_name, gadget_type) {
+                results.extend(gadgets);
+            }
+        }
+
+        // handle variable-length patterns specially
+        match pattern {
+            GadgetPattern::AddRspRet => {
+                if let Ok(ret_gadgets) = self.find_add_rsp_ret(module_name) {
+                    results.extend(ret_gadgets.into_iter().map(|r| r.gadget));
+                }
+            }
+            GadgetPattern::PopRet(reg) => {
+                if let Ok(pop_gadgets) = self.find_pop_ret(module_name) {
+                    let reg_idx = GadgetPattern::reg_index(*reg);
+                    results.extend(
+                        pop_gadgets
+                            .into_iter()
+                            .filter(|g| {
+                                if let GadgetType::PopRet { register } = g.gadget.gadget_type {
+                                    reg_idx == Some(register)
+                                } else {
+                                    false
+                                }
+                            })
+                            .map(|r| r.gadget),
+                    );
+                }
+            }
+            GadgetPattern::PopRetAny => {
+                if let Ok(pop_gadgets) = self.find_pop_ret(module_name) {
+                    results.extend(pop_gadgets.into_iter().map(|r| r.gadget));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(results)
+    }
+}
+
+/// builder for gadget searches with fluent API
+pub struct GadgetSearch {
+    finder: GadgetFinder,
+    pattern: GadgetPattern,
+    module: Option<String>,
+    system_modules_only: bool,
+}
+
+impl GadgetSearch {
+    /// search only in a specific module
+    #[must_use]
+    pub fn in_module(mut self, module_name: &str) -> Self {
+        self.module = Some(module_name.to_string());
+        self
+    }
+
+    /// search only in system modules (ntdll, kernel32, etc.)
+    #[must_use]
+    pub fn system_modules_only(mut self) -> Self {
+        self.system_modules_only = true;
+        self
+    }
+
+    /// execute the search and return matching gadgets
+    pub fn find(self) -> Result<Vec<Gadget>> {
+        if let Some(module_name) = &self.module {
+            self.finder.find_by_pattern(module_name, &self.pattern)
+        } else {
+            self.find_in_system_modules()
+        }
+    }
+
+    /// search in all common system modules
+    pub fn find_in_system_modules(self) -> Result<Vec<Gadget>> {
+        let modules = ["ntdll.dll", "kernel32.dll", "kernelbase.dll"];
+        let mut all_gadgets = Vec::new();
+
+        for module_name in modules {
+            if let Ok(gadgets) = self.finder.find_by_pattern(module_name, &self.pattern) {
+                all_gadgets.extend(gadgets);
+            }
+        }
+
+        if all_gadgets.is_empty() {
+            Err(WraithError::GadgetNotFound {
+                gadget_type: "matching pattern",
+            })
+        } else {
+            Ok(all_gadgets)
+        }
+    }
+
+    /// get the first matching gadget (convenience method)
+    pub fn find_first(self) -> Result<Gadget> {
+        self.find()?
+            .into_iter()
+            .next()
+            .ok_or(WraithError::GadgetNotFound {
+                gadget_type: "matching pattern",
+            })
+    }
+
+    /// get the underlying pattern
+    #[must_use]
+    pub fn get_pattern(&self) -> &GadgetPattern {
+        &self.pattern
     }
 }
 

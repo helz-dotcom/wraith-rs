@@ -26,8 +26,20 @@ pub const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
 pub const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
 pub const IMAGE_SCN_MEM_DISCARDABLE: u32 = 0x02000000;
 
+/// macro for generating section characteristic check methods with `#[must_use]`
+macro_rules! define_section_check {
+    ($(#[$attr:meta])* $name:ident, $flag:ident) => {
+        $(#[$attr])*
+        #[must_use]
+        pub fn $name(&self) -> bool {
+            self.characteristics & $flag != 0
+        }
+    };
+}
+
 impl SectionHeader {
     /// get section name as string (may not be null-terminated)
+    #[must_use]
     pub fn name_str(&self) -> &str {
         let end = self
             .name
@@ -37,27 +49,43 @@ impl SectionHeader {
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
-    /// check if section is executable
-    pub fn is_executable(&self) -> bool {
-        self.characteristics & IMAGE_SCN_MEM_EXECUTE != 0
-    }
+    define_section_check!(
+        /// check if section is executable
+        is_executable, IMAGE_SCN_MEM_EXECUTE
+    );
 
-    /// check if section is readable
-    pub fn is_readable(&self) -> bool {
-        self.characteristics & IMAGE_SCN_MEM_READ != 0
-    }
+    define_section_check!(
+        /// check if section is readable
+        is_readable, IMAGE_SCN_MEM_READ
+    );
 
-    /// check if section is writable
-    pub fn is_writable(&self) -> bool {
-        self.characteristics & IMAGE_SCN_MEM_WRITE != 0
-    }
+    define_section_check!(
+        /// check if section is writable
+        is_writable, IMAGE_SCN_MEM_WRITE
+    );
 
-    /// check if section contains code
-    pub fn contains_code(&self) -> bool {
-        self.characteristics & IMAGE_SCN_CNT_CODE != 0
-    }
+    define_section_check!(
+        /// check if section contains code
+        contains_code, IMAGE_SCN_CNT_CODE
+    );
+
+    define_section_check!(
+        /// check if section contains initialized data
+        contains_initialized_data, IMAGE_SCN_CNT_INITIALIZED_DATA
+    );
+
+    define_section_check!(
+        /// check if section contains uninitialized data
+        contains_uninitialized_data, IMAGE_SCN_CNT_UNINITIALIZED_DATA
+    );
+
+    define_section_check!(
+        /// check if section is discardable
+        is_discardable, IMAGE_SCN_MEM_DISCARDABLE
+    );
 
     /// convert section characteristics to memory protection flags
+    #[must_use]
     pub fn to_protection(&self) -> u32 {
         let r = self.is_readable();
         let w = self.is_writable();

@@ -203,7 +203,8 @@ let status = unsafe { syscall.call1(invalid_handle) };
 ```rust
 use wraith::manipulation::spoof::{
     SpoofedSyscall, SpoofConfig, SpoofMode,
-    GadgetFinder, StackSpoofer,
+    GadgetFinder, GadgetSearch, Register, GadgetPattern,
+    StackSpoofer,
 };
 
 // Create a spoofed syscall with default gadget-based spoofing
@@ -222,17 +223,42 @@ let status = unsafe {
     )
 };
 
-// Find gadgets manually for custom use
+// Find gadgets with the builder API
 let finder = GadgetFinder::new()?;
-let jmp_gadgets = finder.find_jmp_rbx("ntdll.dll")?;
-let ret_gadgets = finder.find_ret("kernel32.dll")?;
+
+// Type-safe register-based search
+let jmp_gadgets = finder.jmp(Register::Rbx)
+    .in_module("ntdll.dll")
+    .find()?;
+
+// Pattern-based search with wildcards
+let finder = GadgetFinder::new()?;
+let any_jmp = finder.pattern("jmp ???")?
+    .in_module("ntdll.dll")
+    .find()?;
+
+// Find any instruction using a specific register
+let finder = GadgetFinder::new()?;
+let rbx_gadgets = finder.pattern("??? rbx")?
+    .find_in_system_modules()?;
+
+// Get first matching gadget
+let finder = GadgetFinder::new()?;
+let gadget = finder.ret()
+    .in_module("kernel32.dll")
+    .find_first()?;
 
 for gadget in jmp_gadgets.iter().take(3) {
     println!("jmp rbx @ {:#x} in {}",
-        gadget.address(),
-        gadget.gadget.module_name
+        gadget.address,
+        gadget.module_name
     );
 }
+
+// Legacy API still works
+let finder = GadgetFinder::new()?;
+let jmp_gadgets = finder.find_jmp_rbx("ntdll.dll")?;
+let ret_gadgets = finder.find_ret("kernel32.dll")?;
 
 // Use different spoof modes
 let simple_spoof = SpoofedSyscall::with_config(
