@@ -237,6 +237,11 @@ impl Scanner {
         self
     }
 
+    /// get pattern length
+    pub fn pattern_len(&self) -> usize {
+        self.pattern.len()
+    }
+
     /// scan byte slice for pattern, returning offsets
     pub fn scan_slice(&self, data: &[u8]) -> Vec<usize> {
         let pattern_len = self.pattern.len();

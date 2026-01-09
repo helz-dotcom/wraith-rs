@@ -32,10 +32,11 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 ### Core Navigation
 - **PEB/TEB Access**: Safe wrappers around Process/Thread Environment Blocks with version-aware field offsets (Windows 7 through Windows 11 24H2)
 - **Module Enumeration**: Iterate loaded modules via all three PEB lists (InLoadOrder, InMemoryOrder, InInitializationOrder)
-- **Export Resolution**: Find exported functions by name, ordinal, or hash
-- **Memory Region Queries**: Enumerate process memory regions with protection info
-- **Thread Enumeration**: List threads in the current process
-- **Pattern Scanning**: Scan memory for byte patterns with wildcard support (IDA-style signatures)
+- **Export Resolution**: Find exported functions by name, ordinal, or hash (local and remote)
+- **Memory Region Queries**: Enumerate process memory regions with protection info (local and remote)
+- **Thread Enumeration**: List threads in local or remote processes
+- **Pattern Scanning**: Scan memory for byte patterns with wildcard support (IDA-style signatures, including external processes)
+- **Process Discovery**: Find processes by name, window class/title, or wait for launch
 
 ### Advanced Manipulation
 
@@ -57,6 +58,7 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | **VMT Hooking** | Hook C++ virtual functions via vtable modification or shadow VMT |
 | **Anti-Debug** | Manipulate PEB.BeingDebugged, NtGlobalFlag, heap flags, hide threads |
 | **Remote Process** | Cross-process memory read/write, module enumeration, thread creation, injection |
+| **External Operations** | Process discovery, remote PE parsing, export/import resolution, pattern scanning, pointer chains |
 | **Kernel Driver** | Full kernel driver development support with IOCTL, shared memory, and process operations |
 | **KM↔UM Communication** | Usermode client library for interacting with kernel drivers |
 
@@ -67,12 +69,15 @@ let nt_open_process = ntdll.get_export("NtOpenProcess")?;
 | PEB/TEB access | Safe wrappers | Raw FFI | Not covered | No |
 | Version-aware offsets | Win7-Win11 | Manual | N/A | N/A |
 | Module enumeration | Iterator API | Manual | Manual | No |
-| Pattern scanning | Module + region scanning | No | No | No |
+| Pattern scanning | Module + region + external | No | No | No |
 | Module unlinking | Built-in | Manual | No | No |
 | Manual PE mapping | Full pipeline | No | No | Parse only |
 | Syscall invocation | Direct + Indirect + Spoofed | No | No | No |
 | Hook detection | Pattern + disk comparison | No | No | No |
 | Remote process ops | Full (read/write/inject) | Manual | Manual | No |
+| Remote PE parsing | Headers, exports, imports | No | No | No |
+| Process discovery | Name, window, wait | Manual | Manual | No |
+| Pointer chains | Built-in | No | No | No |
 | Instruction decoding | iced-x86 powered | No | No | No |
 | Kernel driver support | Full (IOCTL, MDL, process ops) | No | No | No |
 | Zero dependencies* | Yes | Yes | Yes | Yes |
@@ -564,6 +569,226 @@ for module in &modules {
 // Injection methods
 let result = inject_shellcode(&proc, &shellcode)?;  // CreateRemoteThread
 let result = inject_via_section(&proc, &data, true)?;  // NtMapViewOfSection
+```
+
+### External Process Operations
+
+Comprehensive external/remote process operations beyond basic read/write:
+
+```rust
+use wraith::manipulation::remote::{
+    // Memory access trait
+    MemoryAccess, Protection, CurrentProcess,
+    // Process discovery
+    enumerate_processes, find_process_by_name, find_processes_by_name,
+    wait_for_process, find_process_by_window, wait_for_window,
+    // Remote PE operations
+    RemotePeHeaders, RemoteSection, RemoteExport, RemoteImport,
+    // Scanner
+    RemoteScanner,
+    // Existing
+    RemoteProcess, ProcessAccess,
+};
+use std::time::Duration;
+
+// Process discovery - find processes by name
+let pid = find_process_by_name("notepad.exe")?;
+let all_chrome = find_processes_by_name("chrome.exe")?;
+
+// Wait for a process to start
+let pid = wait_for_process("game.exe", Duration::from_secs(30))?;
+
+// Find by window class/title
+let pid = find_process_by_window(Some("Notepad"), None)?;
+let pid = wait_for_window(None, Some("Untitled - Notepad"), Duration::from_secs(10))?;
+
+// Open process by name directly
+let proc = RemoteProcess::open_by_name("target.exe", ProcessAccess::all())?;
+
+// Enumerate all running processes
+for entry in enumerate_processes()? {
+    println!("[{}] {} (parent: {})", entry.pid, entry.name, entry.parent_pid);
+}
+```
+
+#### Remote PE Parsing
+
+```rust
+// Read and parse PE headers from a remote module
+let proc = RemoteProcess::open(pid, ProcessAccess::read_only())?;
+let pe = proc.read_pe_headers(module_base)?;
+
+println!("64-bit: {}", pe.is_64bit());
+println!("Size of image: {:#x}", pe.size_of_image());
+println!("Entry point RVA: {:#x}", pe.entry_point_rva());
+
+// Access sections
+for section in &pe.sections {
+    println!("{} @ RVA {:#x} ({})",
+        section.name_str(),
+        section.virtual_address,
+        if section.is_executable() { "X" } else { "-" }
+    );
+}
+
+// Get sections with resolved addresses
+let sections = proc.get_module_sections("ntdll.dll")?;
+let text = proc.get_module_section("ntdll.dll", ".text")?;
+println!(".text @ {:#x}, executable: {}", text.base, text.is_executable());
+```
+
+#### Remote Export Resolution
+
+```rust
+// Enumerate all exports from a remote module
+let exports = proc.enumerate_remote_exports(module_base)?;
+
+for export in &exports {
+    if let Some(name) = &export.name {
+        println!("{} (ordinal {}) @ {:#x}", name, export.ordinal, export.address);
+        if let Some(fwd) = &export.forwarded_to {
+            println!("  -> forwarded to {}", fwd);
+        }
+    }
+}
+
+// Resolve export by name (handles forwarded exports automatically)
+let nt_open = proc.get_remote_export(ntdll_base, "NtOpenProcess")?;
+
+// Resolve by ordinal
+let addr = proc.get_remote_export_by_ordinal(module_base, 42)?;
+
+// Get all exports from a module by name
+let exports = proc.get_module_exports("kernel32.dll")?;
+```
+
+#### Remote Import Resolution
+
+```rust
+// Enumerate imports from a remote module
+let imports = proc.enumerate_module_imports("target.exe")?;
+
+for import in &imports {
+    let func = import.function_name.as_deref().unwrap_or("<ordinal>");
+    println!("{}!{} @ IAT {:#x} -> {:#x}",
+        import.module_name,
+        func,
+        import.iat_address,
+        import.resolved_address
+    );
+}
+```
+
+#### External Pattern Scanning
+
+```rust
+// Scan a remote module for a pattern
+let matches = proc.scan_module("game.dll", "48 8B 05 ?? ?? ?? ?? 48 89")?;
+for addr in &matches {
+    println!("Found at {:#x}", addr);
+}
+
+// Scan specific range
+let matches = proc.scan_pattern("E8 ?? ?? ?? ?? 90", Some(start..end))?;
+
+// Use RemoteScanner for more control
+let scanner = RemoteScanner::new(&proc)
+    .with_chunk_size(128 * 1024);  // 128KB chunks
+
+let matches = scanner.scan_range(base, size, "48 89 5C 24")?;
+let matches = scanner.scan_module("ntdll.dll", "4C 8B DC")?;
+```
+
+#### Pointer Chain Reading
+
+```rust
+// Read value through pointer chain: [[base + 0x10] + 0x48] + 0x124
+let health: f32 = proc.read_ptr_chain(player_base, &[0x10, 0x48, 0x124])?;
+
+// Get the final address without reading the value
+let health_addr = proc.resolve_ptr_chain(player_base, &[0x10, 0x48, 0x124])?;
+
+// Read string through pointer
+let name = proc.read_string_ptr(name_ptr_addr, 256)?;
+let wide_name = proc.read_wstring_ptr(wname_ptr_addr, 256)?;
+```
+
+#### Memory Region Enumeration
+
+```rust
+// Query a specific memory region
+let region = proc.query_memory(some_address)?;
+println!("Base: {:#x}, Size: {:#x}", region.base_address, region.region_size);
+println!("Committed: {}, Executable: {}", region.is_committed(), region.is_executable());
+
+// Enumerate all memory regions
+let regions = proc.enumerate_regions()?;
+for region in &regions {
+    if region.is_committed() {
+        println!("{:#x} - {:#x} {:?}",
+            region.base_address,
+            region.base_address + region.region_size,
+            region.memory_type
+        );
+    }
+}
+
+// Find all executable regions
+let exec_regions = proc.find_executable_regions()?;
+```
+
+#### Thread Enumeration
+
+```rust
+// Enumerate threads in the target process
+let threads = proc.enumerate_threads()?;
+for thread in &threads {
+    println!("TID {} (priority: {})", thread.tid, thread.base_priority);
+}
+
+// Get the main thread
+let main = proc.get_main_thread()?;
+println!("Main thread: {}", main.tid);
+```
+
+#### Module Wait
+
+```rust
+// Wait for a module to be loaded in the target process
+let module = proc.wait_for_module("user32.dll", Duration::from_secs(10))?;
+println!("{} loaded at {:#x}", module.name, module.base);
+```
+
+#### MemoryAccess Trait
+
+The `MemoryAccess` trait provides a unified interface for memory operations:
+
+```rust
+use wraith::manipulation::remote::{MemoryAccess, Protection, CurrentProcess};
+
+// Works with CurrentProcess (direct pointers)
+let current = CurrentProcess::new();
+let alloc = current.allocate(4096, Protection::READWRITE)?;
+current.write(alloc.base, &[1, 2, 3, 4])?;
+let val: u32 = current.read_val(alloc.base)?;
+current.free(alloc.base)?;
+
+// Same interface works with RemoteProcess (syscalls)
+let remote = RemoteProcess::open(pid, ProcessAccess::all())?;
+let alloc = remote.allocate(4096, Protection::READWRITE)?;
+remote.write_val(alloc.base, &0xDEADBEEF_u32)?;
+let val: u32 = remote.read_val(alloc.base)?;
+
+// Protection helpers
+let prot = Protection::EXECUTE_READWRITE;
+assert!(prot.is_readable() && prot.is_writable() && prot.is_executable());
+```
+
+#### Utilities
+
+```rust
+// Get process ID from a handle
+let pid = get_process_id_from_handle(process_handle)?;
 ```
 
 ### Kernel Driver Development
